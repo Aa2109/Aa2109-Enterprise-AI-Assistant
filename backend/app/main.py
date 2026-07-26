@@ -13,11 +13,12 @@
 #     return {"status": "healthy"}
 
 from fastapi import FastAPI
-
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.lifespan import lifespan
 from app.core.logger import configure_logging
+
+configure_logging()
 
 app = FastAPI(
     title=settings.APP_NAME,
