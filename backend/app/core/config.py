@@ -52,4 +52,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    TAVILY_API_KEY: str
+    SEARCH_PROVIDER: str = "tavily"
+
 settings = Settings()   

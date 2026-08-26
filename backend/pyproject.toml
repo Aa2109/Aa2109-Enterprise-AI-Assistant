@@ -10,6 +10,7 @@ dependencies = [
     "langchain-core>=1.5.1",
     "langchain-text-splitters>=1.1.2",
     "langgraph>=1.2.10",
+    "langgraph-checkpoint-sqlite>=3.1.1",
     "openai>=2.48.0",
     "psycopg2-binary>=2.9.12",
     "psycopg[binary]>=3.3.4",
@@ -20,7 +21,9 @@ dependencies = [
     "qdrant-client>=1.18.0",
     "sentence-transformers>=5.6.1",
     "sqlalchemy>=2.0.51",
+    "sqlglot>=30.17.0",
     "structlog>=26.1.0",
+    "tavily-python>=0.7.27",
     "tiktoken>=0.13.0",
     "uvicorn>=0.51.0",
 ]

@@ -1,23 +1,14 @@
-from app.services.conversation_context_builder import ConversationContextBuilder
 from fastapi import Depends
-
-from app.dependencies.retrieval import get_retrieval_service
-from app.dependencies.llm import get_llm_provider
+from app.dependencies.agent import get_agent_graph
 from app.services.rag_service import RAGService
-
-def get_context_builder(
-    retrieval_service=Depends(get_retrieval_service),
-):
-    return ConversationContextBuilder(
-        retrieval_service,
-    )
+from app.dependencies.conversation import get_conversation_service
 
 
 def get_rag_service(
-    llm_provider=Depends(get_llm_provider),
-    context_builder=Depends(get_context_builder),
+    graph=Depends(get_agent_graph),
+    conversation_service=Depends(get_conversation_service),
 ):
     return RAGService(
-        llm_provider,
-        context_builder,
+        graph =graph,
+        conversation_service = conversation_service
     )

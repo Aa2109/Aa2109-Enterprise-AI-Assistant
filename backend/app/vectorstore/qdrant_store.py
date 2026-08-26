@@ -18,7 +18,7 @@ class QdrantStore(VectorStore):
 
     def __init__(self):
 
-        print(">>> QdrantStore initialized <<<")
+        # print(">>> QdrantStore initialized <<<")
         self.client = QdrantClient(
             host=settings.QDRANT_HOST,
             port=settings.QDRANT_PORT,
@@ -61,14 +61,9 @@ class QdrantStore(VectorStore):
 # Upsert
 
     def upsert(self, vectors: list[dict]):
-      print("UPSERT")
+    #   print("UPSERT")
       points = []
 
-      print("=" * 50)
-      print("UPSERT CALLED")
-      print("Vectors:", len(vectors))
-      print("=" * 50)
-    
       for vector in vectors:
 
         points.append(

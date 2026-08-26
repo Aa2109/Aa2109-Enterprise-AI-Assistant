@@ -7,13 +7,11 @@ class StreamingChatService:
 
     def __init__(
         self,
-        context_builder,
+        graph,
         conversation_service,
-        llm_provider,
     ):
-        self.context_builder = context_builder
+        self.graph = graph
         self.conversations = conversation_service
-        self.llm = llm_provider
 
     def stream(self, request):
 
@@ -27,35 +25,37 @@ class StreamingChatService:
             request.conversation_id,
         )
 
-        system_prompt, user_prompt, _ = (
-            self.context_builder.build(
-                history=history,
-                request=request,
-            )
-        )
+        serializable_history = [
+            {
+                "role": message.role.value,
+                "content": message.content,
+            }
+            for message in history
+        ]
+
+        state = {
+            "question": request.query,
+            "conversation_id": request.conversation_id,
+            "owner_id": request.owner_id,
+            "document_id": request.document_id,
+            "limit": request.limit,
+            "history": serializable_history,
+        }
 
         yield sse(StreamEvent.START, {})
 
-        answer_parts = []
+        answer = []
 
         try:
 
-            for token in self.llm.stream(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-            ):
+            result = self.graph.invoke(state)
 
-                if not token:
-                    continue
+            answer = result["answer"]
 
-                answer_parts.append(token)
-
-                yield sse(
-                    StreamEvent.TOKEN,
-                    token,
-                )
-
-            answer = "".join(answer_parts)
+            yield sse(
+                StreamEvent.TOKEN,
+                answer,
+            )
 
             self.conversations.add_message(
                 request.conversation_id,
@@ -74,5 +74,10 @@ class StreamingChatService:
                 StreamEvent.ERROR,
                 str(exc),
             )
-        # finally:
-        #   yield sse(StreamEvent.DONE, {})
+
+        except Exception as exc:
+
+            yield sse(
+                StreamEvent.ERROR,
+                str(exc),
+            )

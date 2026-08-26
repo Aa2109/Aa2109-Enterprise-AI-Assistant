@@ -31,7 +31,7 @@ class RetrievalService:
             )[0]
         )
 
-        print(f"Vector length: {len(query_vector)}")
+        # print(f"Vector length: {len(query_vector)}")
 
         results = self.vector_store.search(
 
@@ -46,10 +46,10 @@ class RetrievalService:
             score_threshold=request.score_threshold,
         )
 
-        print("=" * 60)
-        print("Retrieved:", len(results))
-        print(results)
-        print("=" * 60)
+        # print("=" * 60)
+        # print("Retrieved:", len(results))
+        # print(results)
+        # print("=" * 60)
 
         hits = [
 

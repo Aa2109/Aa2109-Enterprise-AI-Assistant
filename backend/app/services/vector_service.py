@@ -25,7 +25,7 @@ class VectorService:
     document,
     chunks,
     ):
-        print("INDEX DOCUMENT")
+        # print("INDEX DOCUMENT")
         
         if not chunks:
             return

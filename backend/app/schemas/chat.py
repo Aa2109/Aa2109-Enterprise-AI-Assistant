@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
     document_id: UUID | None = None
     limit: int = Field(default=5, ge=1, le=10)
     conversation_id: UUID
+    # run_id: UUID | None = None
 
 
 class SourceChunk(BaseModel):
@@ -20,5 +21,7 @@ class SourceChunk(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    answer: str
-    sources: list[SourceChunk]
+    answer: str | None = None
+    sources: list[SourceChunk] = Field(default_factory=list)
+    status: str = "completed"
+    approval_id: UUID | None = None
