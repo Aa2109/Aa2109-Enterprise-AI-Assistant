@@ -13,6 +13,15 @@ from app.repositories.approval_repository import ApprovalRepository
 from app.services.permission_service import PermissionService
 from langgraph.errors import GraphInterrupt
 
+from opentelemetry import trace
+
+tracer = trace.get_tracer(
+    "enterprise-ai-assistant"
+)
+
+import time
+from app.observability import metrics
+
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +43,8 @@ class ToolExecutorNode:
         state,
     ):
 
-        print(
-            ">>>>>> Tool Executor node started"
+        logger.info(
+            "Tool Executor node started"
         )
 
         tool_name = state.get(
@@ -175,136 +184,189 @@ class ToolExecutorNode:
 
             if approval is not None:
 
-                # raise ValueError("Approval request no longer exists")
+                with tracer.start_as_current_span(
+                    "hitl.approval"
+                ) as span:
 
-                if str(approval.run_id) != str(run_id):
-                    raise ValueError(
-                        "Approval request does not belong "
-                        "to this agent run"
-                )
-
-                # Keep authoritative approved arguments.
-
-                state["approval_request_id"] = approval.id
-                state["approval_status"] = approval.status
-                
-                tool_name = approval.tool_name
-                tool_arguments = approval.arguments
-
-                
-                state["tool_name"] = tool_name
-                state["tool_arguments"] = tool_arguments
-
-                # --------------------------------------------------
-                # APPROVED
-                # --------------------------------------------------
-
-                if (
-                    approval.status
-                    == ApprovalStatus.APPROVED.value
-                ):
-
-                    state["approval_required"] = False
-
-                    state["approval_status"] = (
-                        ApprovalStatus.APPROVED.value
+                    span.set_attribute(
+                        "hitl.approval_id",
+                        str(approval.id),
                     )
 
-                    logger.info(
-                        "[APPROVAL] Approval accepted "
-                        "approval_id=%s tool=%s",
-                        approval.id,
+                    span.set_attribute(
+                        "hitl.tool_name",
                         tool_name,
                     )
 
-                # --------------------------------------------------
-                # REJECTED
-                # --------------------------------------------------
-
-                elif (
-                    approval.status
-                    == ApprovalStatus.REJECTED.value
-                ):
-
-                    state["approval_required"] = False
-
-                    state["approval_status"] = (
-                        ApprovalStatus.REJECTED.value
+                    span.set_attribute(
+                        "hitl.status",
+                        approval.status,
                     )
 
-                    state["tool_result"] = None
-
-                    state["tool_error"] = (
-                        "The requested tool execution "
-                        "was rejected by the user."
+                    span.set_attribute(
+                        "agent.iteration",
+                        iteration,
                     )
 
-                    logger.info(
-                        "[APPROVAL] Tool rejected "
-                        "approval_id=%s tool=%s",
-                        approval.id,
-                        tool_name,
-                    )
+                    if str(approval.run_id) != str(run_id):
+                        error = (
+                            "Approval request does not belong "
+                            "to this agent run"
+                        )
 
-                    return state
+                        span.record_exception(
+                            ValueError(error)
+                        )
 
-                # --------------------------------------------------
-                # EXPIRED
-                # --------------------------------------------------
+                        span.set_status(
+                            trace.Status(
+                                trace.StatusCode.ERROR,
+                                error,
+                            )
+                        )
 
-                elif (
-                    approval.status
-                    == ApprovalStatus.EXPIRED.value
-                ):
+                        raise ValueError(error)
 
-                    state["approval_required"] = False
-
-                    state["approval_status"] = (
-                        ApprovalStatus.EXPIRED.value
-                    )
-
-                    state["tool_result"] = None
-
-                    state["tool_error"] = (
-                        "The approval request has expired."
-                    )
-
-                    logger.info(
-                        "[APPROVAL] Approval expired "
-                        "approval_id=%s tool=%s",
-                        approval.id,
-                        tool_name,
-                    )
-
-                    return state
-
-                # --------------------------------------------------
-                # Still pending
-                # --------------------------------------------------
-
-                elif approval.status == ApprovalStatus.PENDING.value:
                     state["approval_request_id"] = approval.id
+                    state["approval_status"] = approval.status
 
-                    state["approval_required"] = True
+                    tool_name = approval.tool_name
+                    tool_arguments = approval.arguments
 
-                    state["approval_status"] = (
-                        ApprovalStatus.PENDING.value
-                    )
+                    state["tool_name"] = tool_name
+                    state["tool_arguments"] = tool_arguments
 
-                    interrupt(
-                        {
-                            "status": "approval_required",
-                            "approval_id": str(
-                                approval.id
-                            ),
-                            "tool_name": tool_name,
-                            "arguments": tool_arguments,
-                            "reason": approval.reason,
-                        }
-                    )
-                
-                else:
-                    raise ValueError(f"Unknown approval status: "f"{approval.status}")
+                    # APPROVED
+                    if (
+                        approval.status
+                        == ApprovalStatus.APPROVED.value
+                    ):
+
+                        state["approval_required"] = False
+                        state["approval_status"] = (
+                            ApprovalStatus.APPROVED.value
+                        )
+
+                        span.set_attribute(
+                            "hitl.outcome",
+                            "approved",
+                        )
+
+                        logger.info(
+                            "[APPROVAL] Approval accepted "
+                            "approval_id=%s tool=%s",
+                            approval.id,
+                            tool_name,
+                        )
+
+                    # REJECTED
+                    elif (
+                        approval.status
+                        == ApprovalStatus.REJECTED.value
+                    ):
+
+                        state["approval_required"] = False
+                        state["approval_status"] = (
+                            ApprovalStatus.REJECTED.value
+                        )
+
+                        state["tool_result"] = None
+                        state["tool_error"] = (
+                            "The requested tool execution "
+                            "was rejected by the user."
+                        )
+
+                        span.set_attribute(
+                            "hitl.outcome",
+                            "rejected",
+                        )
+
+                        logger.info(
+                            "[APPROVAL] Tool rejected "
+                            "approval_id=%s tool=%s",
+                            approval.id,
+                            tool_name,
+                        )
+
+                        return state
+
+                    # EXPIRED
+                    elif (
+                        approval.status
+                        == ApprovalStatus.EXPIRED.value
+                    ):
+
+                        state["approval_required"] = False
+                        state["approval_status"] = (
+                            ApprovalStatus.EXPIRED.value
+                        )
+
+                        state["tool_result"] = None
+                        state["tool_error"] = (
+                            "The approval request has expired."
+                        )
+
+                        span.set_attribute(
+                            "hitl.outcome",
+                            "expired",
+                        )
+
+                        logger.info(
+                            "[APPROVAL] Approval expired "
+                            "approval_id=%s tool=%s",
+                            approval.id,
+                            tool_name,
+                        )
+
+                        return state
+
+                    # PENDING
+                    elif (
+                        approval.status
+                        == ApprovalStatus.PENDING.value
+                    ):
+
+                        state["approval_request_id"] = approval.id
+                        state["approval_required"] = True
+                        state["approval_status"] = (
+                            ApprovalStatus.PENDING.value
+                        )
+
+                        span.set_attribute(
+                            "hitl.outcome",
+                            "waiting",
+                        )
+
+                        interrupt(
+                            {
+                                "status": "approval_required",
+                                "approval_id": str(
+                                    approval.id
+                                ),
+                                "tool_name": tool_name,
+                                "arguments": tool_arguments,
+                                "reason": approval.reason,
+                            }
+                        )
+
+                    else:
+                        error = (
+                            f"Unknown approval status: "
+                            f"{approval.status}"
+                        )
+
+                        span.record_exception(
+                            ValueError(error)
+                        )
+
+                        span.set_status(
+                            trace.Status(
+                                trace.StatusCode.ERROR,
+                                error,
+                            )
+                        )
+
+                        raise ValueError(error)
 
             # --------------------------------------------------
             # No existing approval request
@@ -321,9 +383,9 @@ class ToolExecutorNode:
                     # Tool requires human approval
                     # --------------------------------------------------
 
-                    if self.permission_service.requires_approval(
-                        tool
-                    ):
+                    with tracer.start_as_current_span(
+                        "hitl.approval"
+                    ) as span:
 
                         now = datetime.now(
                             timezone.utc
@@ -332,7 +394,6 @@ class ToolExecutorNode:
                         approval = ApprovalRequestDB(
                             conversation_id=conversation_id,
                             run_id=UUID(run_id),
-                            # run_id: str | None,
                             user_id=user_id,
                             tool_name=tool_name,
                             arguments=tool_arguments,
@@ -340,13 +401,10 @@ class ToolExecutorNode:
                                 f"Tool '{tool_name}' requires "
                                 f"human approval before execution."
                             ),
-                            status=(
-                                ApprovalStatus.PENDING.value
-                            ),
+                            status=ApprovalStatus.PENDING.value,
                             created_at=now,
                             expires_at=(
-                                now
-                                + timedelta(minutes=10)
+                                now + timedelta(minutes=10)
                             ),
                         )
 
@@ -356,25 +414,39 @@ class ToolExecutorNode:
                             )
                         )
 
-                        state["approval_required"] = True
-
-                        state["approval_request_id"] = (
-                            approval.id
+                        span.set_attribute(
+                            "hitl.approval_id",
+                            str(approval.id),
                         )
 
+                        span.set_attribute(
+                            "hitl.tool_name",
+                            tool_name,
+                        )
+
+                        span.set_attribute(
+                            "hitl.status",
+                            ApprovalStatus.PENDING.value,
+                        )
+
+                        span.set_attribute(
+                            "hitl.outcome",
+                            "waiting",
+                        )
+
+                        span.set_attribute(
+                            "agent.iteration",
+                            iteration,
+                        )
+
+                        state["approval_required"] = True
+                        state["approval_request_id"] = approval.id
                         state["approval_status"] = (
                             ApprovalStatus.PENDING.value
                         )
 
-                        # IMPORTANT:
-                        # Preserve exact action being approved.
-                        state["tool_name"] = (
-                            tool_name
-                        )
-
-                        state["tool_arguments"] = (
-                            tool_arguments
-                        )
+                        state["tool_name"] = tool_name
+                        state["tool_arguments"] = tool_arguments
 
                         logger.info(
                             "[APPROVAL] Approval required "
@@ -395,7 +467,6 @@ class ToolExecutorNode:
                                 "reason": approval.reason,
                             }
                         )
-
             # ==================================================
             # Actual tool execution
             # ==================================================
@@ -417,10 +488,9 @@ class ToolExecutorNode:
 
             logger.info(
                 "[TOOL] Executing tool=%s "
-                "arguments=%s iteration=%s retry=%s "
+                "iteration=%s retry=%s "
                 "tool_call_count=%s",
                 tool_name,
-                tool_arguments,
                 iteration,
                 retry_count,
                 state["tool_call_count"],
@@ -440,14 +510,87 @@ class ToolExecutorNode:
             # Execute
             # --------------------------------------------------
 
-            result = tool.execute(
-                tool_arguments
+            tool_start = time.perf_counter()
+            metrics.tool_calls.add(
+                1,
+                {
+                    "tool": tool_name
+                }
             )
+            try:
+                with tracer.start_as_current_span(
+                    "tool.execute"
+                ) as span:
+
+                    span.set_attribute(
+                        "tool.name",
+                        tool_name,
+                    )
+
+                    span.set_attribute(
+                        "agent.iteration",
+                        iteration,
+                    )
+
+                    span.set_attribute(
+                        "agent.retry_count",
+                        retry_count,
+                    )
+
+                    try:
+
+                        result = tool.execute(
+                            tool_arguments
+                        )
+
+                        span.set_attribute(
+                            "tool.success",
+                            True,
+                        )
+
+                    except Exception as exc:
+
+                        span.set_attribute(
+                            "tool.success",
+                            False,
+                        )
+
+                        span.record_exception(
+                            exc
+                        )
+
+                        span.set_status(
+                            trace.Status(
+                                trace.StatusCode.ERROR,
+                                str(exc),
+                            )
+                        )
+
+                        raise
+
+            except Exception as exc:
+
+                metrics.tool_failures.add(
+                    1,
+                    {
+                        "tool": tool_name,
+                    },
+                )
+
+                raise
+
+            finally:
+
+                metrics.tool_duration_seconds.record(
+                    time.perf_counter() - tool_start,
+                    {
+                        "tool": tool_name,
+                    },
+                )
 
             logger.info(
-                "[TOOL] Result tool=%s result=%s",
+                "[TOOL] Result tool=%s",
                 tool_name,
-                result,
             )
 
             state["tool_result"] = result

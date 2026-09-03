@@ -62,8 +62,6 @@ class DocumentService:
 
     def process_document(self, document, file_path, db):
 
-        # print("PROCESS DOCUMENT")
-
         # document.status = "EXTRACTING"
         document.status= DocumentStatus.EXTRACTING
 
@@ -71,14 +69,11 @@ class DocumentService:
         processor = ProcessorFactory.get_processor(
             Path(file_path)
         )
-        # print("=" * 50)
-        # print("Processing document:", document.id)
-        # print("=" * 50)
         
         raw_text = processor.extract_text(
             Path(file_path)
         )
-        # print("Raw text length:", len(raw_text))
+        
         clean_text = TextCleaner.clean(
             raw_text
         )

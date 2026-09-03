@@ -54,7 +54,28 @@ services:
     volumes:
       - minio_data:/data
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true  
+
+  prometheus:
+    image: prom/prometheus:latest
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
 volumes:
   postgres_data:
   qdrant_data:
   minio_data:
+

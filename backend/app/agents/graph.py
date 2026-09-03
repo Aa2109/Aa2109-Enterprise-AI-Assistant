@@ -12,6 +12,8 @@ def build_graph(
     responder,
     clarify,
     tool_executor_node,
+    memory_retriever_node,
+    memory_extractor_node,
     ):
 
     graph = StateGraph(AgentState)
@@ -21,9 +23,12 @@ def build_graph(
     graph.add_node("responder",responder, )
     graph.add_node("clarify",clarify, )
     graph.add_node("tool_executor", tool_executor_node)
+    graph.add_node("memory_retriever", memory_retriever_node)
+    graph.add_node("memory_extractor", memory_extractor_node)
     
 
-    graph.add_edge(START,"planner",)
+    graph.add_edge(START,"memory_retriever",)
+    graph.add_edge("memory_retriever", "planner",)
 
     graph.add_conditional_edges(
         "planner",
@@ -40,7 +45,8 @@ def build_graph(
 
     graph.add_edge("retriever","planner", )
     graph.add_edge("tool_executor", "planner")
-    graph.add_edge( "responder",END, )
+    graph.add_edge( "responder", "memory_extractor",)
+    graph.add_edge("memory_extractor", END)
     graph.add_edge("clarify",END, )
 
     return graph.compile(

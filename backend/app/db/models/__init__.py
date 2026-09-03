@@ -8,6 +8,7 @@ from app.db.models.embedding import Embedding
 from app.db.models.conversation import Conversation
 from app.db.models.message import Message
 from app.db.models.approval_request import ApprovalRequestDB
+from app.db.models.memory import MemoryDB
 
 __all__ = [
     "User",
@@ -18,5 +19,6 @@ __all__ = [
     "Conversation",
     "Message",
     "ApprovalRequestDB",
+    "MemoryDB",
 
 ]

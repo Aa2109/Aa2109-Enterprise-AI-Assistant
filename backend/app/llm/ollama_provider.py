@@ -1,6 +1,6 @@
 import json
 
-from openai import BaseModel
+from pydantic import BaseModel
 import requests
 
 from app.core.config import settings
@@ -26,9 +26,6 @@ class OllamaProvider(LLMProvider):
             timeout=120,
         )
 
-        # print("Status:", response.status_code)
-        # print("Body:", response.text)
-
         response.raise_for_status()
 
         return response.json()["response"]
@@ -38,7 +35,6 @@ class OllamaProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
     ):
-        # print("Calling Ollama...")
 
         response = requests.post(
             f"{settings.OLLAMA_URL}/api/generate",
@@ -50,8 +46,7 @@ class OllamaProvider(LLMProvider):
             },
             stream=True,
             timeout=120,
-        )
-        # print(response.status_code)     
+        )   
 
         response.raise_for_status()
 
@@ -63,11 +58,9 @@ class OllamaProvider(LLMProvider):
             chunk = json.loads(line.decode("utf-8"))
 
             if "response" in chunk:
-                # print(chunk["response"])
                 yield chunk["response"]
 
             if chunk.get("done"):
-                # print("finished")
                 break
 
     def generate_structured(
@@ -89,12 +82,8 @@ class OllamaProvider(LLMProvider):
             timeout=120,
         )
 
-        # print(schema.model_json_schema())
         response.raise_for_status()
 
         data = response.json()["response"]
-
-        # print("Structured response:")
-        # print(data)
 
         return schema.model_validate_json(data)

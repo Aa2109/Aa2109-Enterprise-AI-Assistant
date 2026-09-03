@@ -9,6 +9,11 @@ from app.dependencies.retriever import get_retriever
 from app.dependencies.responder import get_responder
 from app.dependencies.clarify import get_clarify
 from app.dependencies.tool_executor import get_tool_executor_node
+from app.dependencies.memory import(
+get_memory_retriever_node,
+get_memory_extractor_node,
+)
+
 
 # @lru_cache
 def get_agent_graph(
@@ -17,6 +22,8 @@ def get_agent_graph(
     responder=Depends(get_responder),
     clarify=Depends(get_clarify),
     tool_executor_node=Depends(get_tool_executor_node),
+    memory_retriever_node=Depends(get_memory_retriever_node),
+    memory_extractor_node=Depends(get_memory_extractor_node),
 ):
     return build_graph(
         planner,
@@ -24,4 +31,6 @@ def get_agent_graph(
         responder,
         clarify,
         tool_executor_node,
+        memory_retriever_node,
+        memory_extractor_node,
     )

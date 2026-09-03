@@ -6,11 +6,12 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.llm.base import LLMProvider
 
-class OpenAILLMProvider(LLMProvider):
+class OpenRouterProvider(LLMProvider):
 
     def __init__(self) -> None:
         self.client = OpenAI(
-            api_key=settings.OPENAI_API_KEY
+            api_key=settings.OPENROUTER_API_KEY,
+            base_url=settings.OPENROUTER_BASE_URL,
         )
 
         self.model = settings.LLM_MODEL
@@ -21,9 +22,9 @@ class OpenAILLMProvider(LLMProvider):
         user_prompt: str,
     ) -> str:
 
-        response = self.client.responses.create(
+        response = self.client.chat.completions.create(
             model=self.model,
-            input=[
+            messages=[
                 {
                     "role": "system",
                     "content": system_prompt,
@@ -35,7 +36,7 @@ class OpenAILLMProvider(LLMProvider):
             ],
         )
 
-        return response.output_text or ""
+        return response.choices[0].message.content or ""
 
     def stream(
         self,
@@ -43,9 +44,9 @@ class OpenAILLMProvider(LLMProvider):
         user_prompt: str,
     ) -> Iterator[str]:
 
-        stream = self.client.responses.create(
+        stream = self.client.chat.completions.create(
             model=self.model,
-            input=[
+            messages=[
                 {
                     "role": "system",
                     "content": system_prompt,
@@ -58,11 +59,15 @@ class OpenAILLMProvider(LLMProvider):
             stream=True,
         )
 
-        for event in stream:
+        for chunk in stream:
 
-            if event.type == "response.output_text.delta":
-                if event.delta:
-                    yield event.delta
+            if not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta
+
+            if delta.content:
+                yield delta.content
 
     def generate_structured(
         self,
@@ -71,9 +76,9 @@ class OpenAILLMProvider(LLMProvider):
         schema: type[BaseModel],
     ) -> BaseModel:
 
-        response = self.client.responses.parse(
+        response = self.client.chat.completions.create(
             model=self.model,
-            input=[
+            messages=[
                 {
                     "role": "system",
                     "content": system_prompt,
@@ -83,12 +88,21 @@ class OpenAILLMProvider(LLMProvider):
                     "content": user_prompt,
                 },
             ],
-            text_format=schema,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema.__name__,
+                    "strict": True,
+                    "schema": schema.model_json_schema(),
+                },
+            },
         )
 
-        if response.output_parsed is None:
+        content = response.choices[0].message.content
+
+        if not content:
             raise ValueError(
-                "OpenAI returned empty structured response"
+                "OpenRouter returned empty structured response"
             )
 
-        return response.output_parsed
+        return schema.model_validate_json(content)

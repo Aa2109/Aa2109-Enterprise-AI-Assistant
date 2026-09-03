@@ -1,17 +1,43 @@
-from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi import Request
-import uuid
+from uuid import uuid4
 
-class RequestIDMiddleware(BaseHTTPMiddleware):
+from starlette.middleware.base import (
+    BaseHTTPMiddleware,
+)
 
-    async def dispatch(self, request: Request, call_next):
+from app.observability.context import (
+    set_request_id,
+)
 
-        request_id = str(uuid.uuid4())
 
-        request.state.request_id = request_id
+class RequestIDMiddleware(
+    BaseHTTPMiddleware
+):
 
-        response = await call_next(request)
+    async def dispatch(
+        self,
+        request,
+        call_next,
+    ):
 
-        response.headers["X-Request-ID"] = request_id
+        request_id = request.headers.get(
+            "X-Request-ID"
+        )
+
+        if not request_id:
+            request_id = str(
+                uuid4()
+            )
+
+        set_request_id(
+            request_id
+        )
+
+        response = await call_next(
+            request
+        )
+
+        response.headers[
+            "X-Request-ID"
+        ] = request_id
 
         return response

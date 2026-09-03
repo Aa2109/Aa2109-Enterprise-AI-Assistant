@@ -40,3 +40,6 @@ class AgentState(TypedDict, total=False):
     approval_status: str | None
     approval_required: bool
     run_id: str | None
+
+    retrieved_memories: list[dict]
+    memory_candidates: list[dict]

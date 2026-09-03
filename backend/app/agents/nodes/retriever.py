@@ -7,7 +7,6 @@ class RetrieverNode:
        self.retrieval_service = retrieval_service
 
     def __call__(self, state):
-        print("<<<<<< Retriever node started")
 
         retrieval_request = SemanticSearchRequest(
             query=state["question"],
@@ -17,7 +16,5 @@ class RetrieverNode:
         )
 
         result = self.retrieval_service.search(retrieval_request)
-        print("Retrieved:", len(result.results))
         state["retrieved_chunks"] = result.results
-        print("Keys after retrieval:", state.keys())
         return state
