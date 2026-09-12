@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.reliability import execute_sync
 from app.core.timeout import DependencyTimeoutError
 from app.observability import metrics
+from app.agents.result import build_result
 from app.security.audit import audit_security_event
 from app.security.guards import has_permission
 from app.security.models import Permission
@@ -88,20 +89,17 @@ class DataAgent:
                         allowed=False,
                     )
 
-                    error_message = (
-                        "You are not authorized to execute "
-                        "the data operation."
-                    )
-
-                    agent_result = {
-                        "agent": "data",
-                        "success": False,
-                        "content": "",
-                        "metadata": {
+                    agent_result = build_result(
+                        "data",
+                        success=False,
+                        metadata={
                             "permission_denied": True,
                         },
-                        "error": error_message,
-                    }
+                        error=(
+                            "You are not authorized to execute "
+                            "the data operation."
+                        ),
+                    )
 
                     state["data_results"] = [
                         agent_result
@@ -191,12 +189,39 @@ class DataAgent:
                 state["tool_result"] = result
                 state["tool_name"] = "sql"
 
-                agent_result = {
-                    "agent": "data",
-                    "success": True,
-                    "content": "",
-                    "metadata": result,
-                }
+                # PR-30 — standardized contract: a short human-readable
+                # preview as content, "database" as the source. The full
+                # structured rows stay in metadata for the responder's
+                # deterministic SQL formatting to use.
+                columns = result.get(
+                    "columns",
+                    [],
+                )
+
+                rows = result.get(
+                    "rows",
+                    [],
+                )
+
+                row_count = result.get(
+                    "row_count",
+                    len(rows),
+                )
+
+                agent_result = build_result(
+                    "data",
+                    success=True,
+                    content=(
+                        f"Returned {row_count} row(s); "
+                        "columns: "
+                        + ", ".join(
+                            str(column)
+                            for column in columns
+                        )
+                    ),
+                    sources=["database"],
+                    metadata=result,
+                )
 
                 state["data_results"] = [
                     agent_result
@@ -264,15 +289,14 @@ class DataAgent:
         reason: str,
     ) -> dict:
 
-        agent_result = {
-            "agent": "data",
-            "success": False,
-            "content": "",
-            "metadata": {
+        agent_result = build_result(
+            "data",
+            success=False,
+            metadata={
                 "reason": reason,
             },
-            "error": error,
-        }
+            error=error,
+        )
 
         state["data_results"] = [
             agent_result

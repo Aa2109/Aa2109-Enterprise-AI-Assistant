@@ -1,3 +1,11 @@
+"""LEGACY — retained for reference, not wired into the graph since PR-30.
+
+The supervisor + specialists path is the only execution flow. The
+planner (LLM + deterministic routing, old-style tool executor) was the
+pre-PR-26 orchestration; it is kept on disk for comparison and nothing
+references it at runtime.
+"""
+
 import logging
 import re
 

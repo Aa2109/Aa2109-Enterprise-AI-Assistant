@@ -86,6 +86,7 @@ class RAGService:
         self,
         request: ChatRequest,
         user: UserContext,
+        request_id: str | None = None,
     ) -> ChatResponse:
 
         start_time = time.perf_counter()
@@ -93,6 +94,11 @@ class RAGService:
         with tracer.start_as_current_span(
         "rag.answer"
         ) as rag_span:
+
+            rag_span.set_attribute(
+                "request_id",
+                request_id or "",
+            )
 
             rag_span.set_attribute(
             "conversation.id",
@@ -188,6 +194,10 @@ class RAGService:
                                     [],
                                 )
                             ],
+                            citations=cached.get(
+                                "citations",
+                                [],
+                            ),
                             status="completed",
                             approval_id=None,
                         )
@@ -196,7 +206,10 @@ class RAGService:
                 # 2. Build graph state
                 # ==================================================
 
-                run_id = str(uuid4())
+                # PR-30 — correlate with the middleware request_id (or a
+                # fresh id) so one user request shares one id across the
+                # graph state, spans and logs.
+                run_id = request_id or str(uuid4())
                 serializable_history = [
                     {
                         "role": message.role.value,
@@ -270,6 +283,11 @@ class RAGService:
                         "agent.run_id", run_id,
                     )
 
+                    span.set_attribute(
+                        "request_id",
+                        run_id,
+                    )
+
                     try:
 
                         with agent_execution_slot():
@@ -286,6 +304,23 @@ class RAGService:
                         span.set_attribute(
                             "agent.tool_call_count",
                             result.get("tool_call_count", 0),
+                        )
+
+                        # PR-30 — token usage on the run span so "why did
+                        # this request cost X tokens" is self-service.
+                        span.set_attribute(
+                            "agent.total_tokens",
+                            result.get("total_tokens", 0),
+                        )
+
+                        span.set_attribute(
+                            "agent.input_tokens",
+                            result.get("input_tokens", 0),
+                        )
+
+                        span.set_attribute(
+                            "agent.output_tokens",
+                            result.get("output_tokens", 0),
                         )
 
                         # if result.get("decision"):
@@ -423,6 +458,10 @@ class RAGService:
                         cached_value_to_json(
                             {
                                 "answer": answer,
+                                "citations": result.get(
+                                    "citations",
+                                    [],
+                                ),
                                 "sources": [
                                     {
                                         "chunk_id": str(hit.chunk_id),
@@ -460,6 +499,10 @@ class RAGService:
                         )
                         for hit in retrieved_chunks
                     ],
+                    citations=result.get(
+                        "citations",
+                        [],
+                    ),
                     status="completed",
                     approval_id=None,
                 )

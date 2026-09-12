@@ -3,6 +3,7 @@ from typing import ClassVar
 
 from opentelemetry import trace
 
+from app.agents.result import build_result
 from app.core.budget import charge_usage
 from app.prompts.supervisor import (
     SUPERVISOR_SYSTEM_PROMPT,
@@ -10,6 +11,7 @@ from app.prompts.supervisor import (
 from app.schemas.agents_schema import (
     RoutingDecision,
 )
+from app.security.audit import audit_security_event
 from app.security.guards import has_permission
 from app.security.models import Permission, UserContext
 from app.security.prompt_guard import validate_user_prompt
@@ -277,21 +279,69 @@ class Supervisor:
 
             # ==========================================
             # Authorization boundary — drop any specialist
-            # the caller lacks permission to run.
+            # the caller lacks permission to run, and record
+            # the denial as a structured failed result.
+            #
+            # PR-30 — the responder then returns the deterministic
+            # "not authorized" answer (no LLM) and the supervisor never
+            # retries denied specialists, instead of synthesizing an
+            # answer from zero evidence.
             # ==========================================
 
             user_context = state.get(
                 "user_context",
             )
 
-            selected_agents = [
-                agent_name
-                for agent_name in selected_agents
+            eligible_agents: list[str] = []
+            denied_agents: list[str] = []
+
+            for agent_name in selected_agents:
                 if self._user_can(
                     user_context,
                     agent_name,
+                ):
+                    eligible_agents.append(agent_name)
+                else:
+                    denied_agents.append(agent_name)
+
+            selected_agents = eligible_agents
+
+            if denied_agents:
+
+                audit_security_event(
+                    event="tool_authorization_denied",
+                    user_id=(
+                        user_context.user_id
+                        if user_context is not None
+                        else None
+                    ),
+                    resource=",".join(denied_agents),
+                    action="execute",
+                    allowed=False,
                 )
-            ]
+
+                agent_results = state.setdefault(
+                    "agent_results",
+                    {},
+                )
+
+                for agent_name in denied_agents:
+                    agent_results[agent_name] = build_result(
+                        agent_name,
+                        success=False,
+                        metadata={
+                            "permission_denied": True,
+                        },
+                        error=(
+                            f"You are not authorized to use the "
+                            f"{agent_name} specialist."
+                        ),
+                    )
+
+                logger.warning(
+                    "Supervisor denied specialists=%s",
+                    sorted(denied_agents),
+                )
 
             supervisor_done = decision.done
             supervisor_reason = decision.reasoning

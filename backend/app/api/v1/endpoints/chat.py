@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.dependencies.rag import get_rag_service
 from app.schemas.chat import ChatRequest, ChatResponse
@@ -12,10 +12,23 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 
 @router.post("/answer", response_model=ChatResponse)
 def answer(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
     user: UserContext = Depends(
         require_permission(Permission.CHAT)
     ),
     service: RAGService = Depends(get_rag_service),
 ) -> ChatResponse:
-    return service.answer(request, user)
+    # PR-30 — thread the request_id set by RequestIDMiddleware into the
+    # graph so logs / traces / metrics for one user request share one id.
+    request_id = getattr(
+        request.state,
+        "request_id",
+        None,
+    )
+
+    return service.answer(
+        body,
+        user,
+        request_id=request_id,
+    )

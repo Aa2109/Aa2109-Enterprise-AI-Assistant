@@ -104,3 +104,7 @@ class AgentState(TypedDict, total=False):
     # ==================================================
 
     answer: str | None
+
+    # PR-30 — human-readable source/citation list collected from
+    # successful specialist results during final synthesis.
+    citations: list

@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.reliability import execute_sync
 from app.core.timeout import DependencyTimeoutError
 from app.observability import metrics
+from app.agents.result import build_result, truncate_text
 from app.security.audit import audit_security_event
 from app.security.guards import has_permission
 from app.security.models import Permission
@@ -93,18 +94,17 @@ class ResearchAgent:
                         allowed=False,
                     )
 
-                    agent_result = {
-                        "agent": "research",
-                        "success": False,
-                        "content": "",
-                        "metadata": {
+                    agent_result = build_result(
+                        "research",
+                        success=False,
+                        metadata={
                             "permission_denied": True,
                         },
-                        "error": (
+                        error=(
                             "You are not authorized to run "
                             "external research."
                         ),
-                    }
+                    )
 
                     state["research_results"] = [
                         agent_result
@@ -200,16 +200,42 @@ class ResearchAgent:
 
                 state["web_results"] = web_results
 
-                agent_result = {
-                    "agent": "research",
-                    "success": True,
-                    "content": "",
-                    "metadata": {
+                # PR-30 — standardized contract: carry compact evidence
+                # and human-readable citations (title + URL) so the
+                # responder can expose sources without re-reading state.
+                content = truncate_text(
+                    "\n\n".join(
+                        f"{r.get('title', '')}: {r.get('snippet', '')}"
+                        for r in web_results
+                    ),
+                    settings.MAX_CONTEXT_CHARS,
+                )
+
+                sources = list(
+                    dict.fromkeys(
+                        (
+                            (
+                                f"{r.get('title', '')} — "
+                                f"{r.get('url', '')}"
+                            )
+                            if r.get("url")
+                            else r.get("title", "")
+                        )
+                        for r in web_results
+                    )
+                )[:5]
+
+                agent_result = build_result(
+                    "research",
+                    success=True,
+                    content=content,
+                    sources=sources,
+                    metadata={
                         "result_count": len(
                             web_results
                         ),
                     },
-                }
+                )
 
                 state["research_results"] = [
                     agent_result
@@ -279,15 +305,14 @@ class ResearchAgent:
         reason: str,
     ) -> dict:
 
-        agent_result = {
-            "agent": "research",
-            "success": False,
-            "content": "",
-            "metadata": {
+        agent_result = build_result(
+            "research",
+            success=False,
+            metadata={
                 "reason": reason,
             },
-            "error": error,
-        }
+            error=error,
+        )
 
         state["research_results"] = [
             agent_result

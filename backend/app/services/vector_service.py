@@ -64,6 +64,8 @@ class VectorService:
 
                 "content": chunk.content,
 
+                "document_name": document.original_filename,
+
                 "embedding": vector,
             })
 

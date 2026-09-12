@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.reliability import execute_sync
 from app.core.timeout import DependencyTimeoutError
 from app.observability import metrics
+from app.agents.result import build_result, truncate_text
 from app.security.audit import audit_security_event
 from app.security.guards import has_permission
 from app.security.models import Permission
@@ -90,18 +91,17 @@ class RAGAgent:
                         allowed=False,
                     )
 
-                    result = {
-                        "agent": "rag",
-                        "success": False,
-                        "content": "",
-                        "metadata": {
+                    result = build_result(
+                        "rag",
+                        success=False,
+                        metadata={
                             "permission_denied": True,
                         },
-                        "error": (
+                        error=(
                             "You are not authorized to access "
                             "internal documents."
                         ),
-                    }
+                    )
 
                     state["rag_results"] = [result]
                     state.setdefault(
@@ -189,16 +189,47 @@ class RAGAgent:
                     [],
                 )
 
-                result = {
-                    "agent": "rag",
-                    "success": True,
-                    "content": "",
-                    "metadata": {
+                # PR-30 — standardized contract: carry the actual
+                # evidence (chunk content) plus human-readable sources
+                # (document names) so the responder never has to read
+                # internals of the retriever.
+                content = truncate_text(
+                    "\n\n".join(
+                        getattr(
+                            chunk,
+                            "content",
+                            str(chunk),
+                        )
+                        for chunk in chunks
+                    ),
+                    settings.MAX_CONTEXT_CHARS,
+                )
+
+                sources = list(
+                    dict.fromkeys(
+                        (
+                            getattr(
+                                chunk,
+                                "document_name",
+                                None,
+                            )
+                            or str(chunk.document_id)
+                        )
+                        for chunk in chunks
+                    )
+                )
+
+                result = build_result(
+                    "rag",
+                    success=True,
+                    content=content,
+                    sources=sources,
+                    metadata={
                         "result_count": len(
                             chunks
                         ),
                     },
-                }
+                )
 
                 state["rag_results"] = [
                     result
@@ -269,15 +300,14 @@ class RAGAgent:
         reason: str,
     ) -> dict:
 
-        result = {
-            "agent": "rag",
-            "success": False,
-            "content": "",
-            "metadata": {
+        result = build_result(
+            "rag",
+            success=False,
+            metadata={
                 "reason": reason,
             },
-            "error": error,
-        }
+            error=error,
+        )
 
         state["rag_results"] = [result]
         state.setdefault(

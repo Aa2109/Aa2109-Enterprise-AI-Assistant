@@ -18,9 +18,19 @@ class RoutingDecision(BaseModel):
 
 
 class AgentResult(BaseModel):
+    """Standardized contract every specialist returns.
+
+    The supervisor and the final responder only rely on these six fields,
+    so any specialist can be swapped (e.g. research -> deep research)
+    without redesigning the orchestration.
+    """
+
     agent: AgentName
     success: bool
     content: str = ""
+    sources: list[str] = Field(
+        default_factory=list,
+    )
     metadata: dict = Field(
         default_factory=dict,
     )

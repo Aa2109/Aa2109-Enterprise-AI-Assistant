@@ -58,6 +58,8 @@ class RetrievalService:
 
                 score=item["score"],
 
+                document_name=item.get("document_name"),
+
             )
 
             for item in results

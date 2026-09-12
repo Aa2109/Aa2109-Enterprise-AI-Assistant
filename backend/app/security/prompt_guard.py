@@ -10,6 +10,10 @@ INJECTION_PATTERNS = [
     r"show\s+me\s+your\s+instructions",
     r"disregard\s+previous\s+rules",
     r"you\s+are\s+now\s+the\s+system",
+    # PR-30 — additional system-boundary probes.
+    r"show\s+(your|the)\s+system\s+prompt",
+    r"(repeat|copy|echo|print)\s+(your|the)\s+(system\s+prompt|instructions|rules|developer\s+message)",
+    r"what\s+are\s+your\s+(system|developer|initial)\s+(prompt|instructions|rules)",
 ]
 
 

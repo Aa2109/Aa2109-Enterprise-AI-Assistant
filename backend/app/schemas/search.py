@@ -39,6 +39,11 @@ class SearchHit(BaseModel):
 
     score: float
 
+    # PR-30 — human-readable source name for citations. Populated at
+    # ingestion time in the vector payload; None for documents indexed
+    # before this field existed (callers fall back to document_id).
+    document_name: str | None = None
+
 
 class SemanticSearchResponse(BaseModel):
 

@@ -1,3 +1,10 @@
+"""LEGACY — retained for reference, not wired into the graph since PR-30.
+
+This standalone retriever node was the pre-PR-26 RAG path. Retrieval now
+runs inside the RAG specialist (``app/agents/specialists/rag_agent.py``),
+which wraps the same ``RetrievalService`` in the reliability stack.
+"""
+
 from app.schemas.search import SemanticSearchRequest
 
 

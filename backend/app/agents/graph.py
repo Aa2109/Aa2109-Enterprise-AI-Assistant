@@ -9,11 +9,7 @@ checkpointer = InMemorySaver()
 
 
 def build_graph(
-    planner,
-    retriever,
     responder,
-    clarify,
-    tool_executor_node,
     memory_retriever_node,
     memory_extractor_node,
     supervisor,
@@ -21,39 +17,24 @@ def build_graph(
     research_agent,
     data_agent,
 ):
+    """Build the LangGraph for the supervisor + specialists flow.
+
+    PR-30 — the legacy planner/tool_executor/clarify/retriever nodes are
+    no longer wired in. Those files remain in ``app/agents/nodes/`` for
+    reference but the supervisor path is the only execution flow:
+
+        START → memory_retriever → supervisor
+               → [rag | research | data] → supervisor (loop)
+               → responder → memory_extractor → END
+    """
 
     graph = StateGraph(
         AgentState
     )
 
     # ================================================
-    # Existing nodes
+    # Memory
     # ================================================
-
-    graph.add_node(
-        "planner",
-        planner,
-    )
-
-    graph.add_node(
-        "retriever",
-        retriever,
-    )
-
-    graph.add_node(
-        "responder",
-        responder,
-    )
-
-    graph.add_node(
-        "clarify",
-        clarify,
-    )
-
-    graph.add_node(
-        "tool_executor",
-        tool_executor_node,
-    )
 
     graph.add_node(
         "memory_retriever",
@@ -66,7 +47,7 @@ def build_graph(
     )
 
     # ================================================
-    # PR-26 supervisor + specialists
+    # Supervisor + specialists
     # ================================================
 
     graph.add_node(
@@ -77,7 +58,6 @@ def build_graph(
     graph.add_node(
         "rag",
         rag_agent,
-        
     )
 
     graph.add_node(
@@ -91,7 +71,16 @@ def build_graph(
     )
 
     # ================================================
-    # PR-26 execution path / main flow
+    # Final response
+    # ================================================
+
+    graph.add_node(
+        "responder",
+        responder,
+    )
+
+    # ================================================
+    # Edges
     # ================================================
 
     graph.add_edge(
@@ -112,7 +101,6 @@ def build_graph(
             "research": "research",
             "data": "data",
             "responder": "responder",
-            # "supervisor": "supervisor",
         },
     )
 
@@ -131,10 +119,6 @@ def build_graph(
         "supervisor",
     )
 
-    # ================================================
-    # Existing finalization
-    # ================================================
-
     graph.add_edge(
         "responder",
         "memory_extractor",
@@ -142,39 +126,6 @@ def build_graph(
 
     graph.add_edge(
         "memory_extractor",
-        END,
-    )
-
-    # ================================================
-    # Old planner path
-    # Keep temporarily while migrating.
-    # ================================================
-   
-    graph.add_conditional_edges(
-        "planner",
-        lambda state: state["decision"],
-        {
-            "RAG": "retriever",
-            "DIRECT": "responder",
-            "TOOL": "tool_executor",
-            "CLARIFY": "clarify",
-            "UNSUPPORTED": "responder",
-            "FINAL": "responder",
-        },
-    )
-
-    graph.add_edge(
-        "retriever",
-        "planner",
-    )
-
-    graph.add_edge(
-        "tool_executor",
-        "planner",
-    )
-
-    graph.add_edge(
-        "clarify",
         END,
     )
 

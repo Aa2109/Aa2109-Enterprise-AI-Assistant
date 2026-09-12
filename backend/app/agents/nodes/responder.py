@@ -1,5 +1,11 @@
 import re
 
+from app.agents.synthesis import (
+    ALL_FAILED_ANSWER_PREFIX,
+    NO_INTERNAL_DOCUMENT_ANSWER,
+    PERMISSION_DENIED_ANSWER,
+    SynthesisPolicy,
+)
 from app.core.budget import charge_usage
 from app.core.config import settings
 from app.prompts.direct import DIRECT_SYSTEM_PROMPT
@@ -736,7 +742,40 @@ Answer the user's question directly.
 Do not invent facts.
 """
 
-            user_prompt = state["question"]
+            # PR-30 — user memory retrieved earlier in the graph and
+            # bounded recent history must reach the final response.
+            # Without them a same-conversation follow-up such as
+            # "My name is Aashif." -> "What is my name?" degrades to
+            # "Unknown" even though the memory was stored + retrieved.
+            user_prompt = (
+                f"Current user question:\n"
+                f"{state['question']}"
+            )
+
+            if memory_context != "None":
+
+                user_prompt += (
+                    f"\n\nRelevant user memory:\n"
+                    f"{memory_context}"
+                )
+
+            recent_history = state.get(
+                "history",
+                [],
+            )[-6:]
+
+            if recent_history:
+
+                history_turns = "\n".join(
+                    f"{'User' if m.get('role') == 'user' else 'Assistant'}: "
+                    f"{m.get('content', '')}"
+                    for m in recent_history
+                )
+
+                user_prompt += (
+                    f"\n\nConversation history:\n"
+                    f"{history_turns}"
+                )
 
 
 
@@ -826,83 +865,76 @@ Do not invent facts.
         state,
         agent_results,
     ):
-        successful_results = {
-            name: result
-            for name, result in agent_results.items()
-            if isinstance(result, dict)
-            and result.get("success") is True
-        }
+        # PR-30 — all synthesis rules live in SynthesisPolicy so the
+        # "AI policy layer" is testable and separate from LLM wiring.
+        policy = SynthesisPolicy.from_results(agent_results)
 
-        failed_results = {
-            name: result
-            for name, result in agent_results.items()
-            if isinstance(result, dict)
-            and result.get("success") is False
-        }
+        # Reserve citations on every path (including deterministic ones).
+        state["citations"] = policy.collect_sources()
 
-        if not successful_results:
-            if failed_results:
-                if any(
-                    isinstance(result.get("metadata"), dict)
-                    and result["metadata"].get(
-                        "permission_denied"
-                    )
-                    for result in failed_results.values()
-                ):
-                    state["answer"] = (
-                        "You are not authorized to access "
-                        "the requested data."
-                    )
+        # ----------------------------------------------------------
+        # No successful evidence at all — deterministic, no LLM.
+        # ----------------------------------------------------------
+
+        if not policy.has_successful:
+            if policy.failed:
+                if policy.permission_denied:
+                    state["answer"] = PERMISSION_DENIED_ANSWER
                     return state
 
-                failed_agents = ", ".join(
-                    failed_results
-                )
+                failed_agents = ", ".join(policy.failed)
                 state["answer"] = (
-                    "I couldn't complete the request because "
-                    f"the following specialists were unavailable: "
-                    f"{failed_agents}."
+                    ALL_FAILED_ANSWER_PREFIX
+                    + f"{failed_agents}."
                 )
                 return state
 
-        failure_summary = "\n".join(
-            f"- {name}: {self._safe_failure_description(name, result)}"
-            for name, result in failed_results.items()
-        ) or "None"
+        # ----------------------------------------------------------
+        # RAG found nothing and nothing else succeeded: never
+        # fabricate an internal-knowledge answer.
+        # ----------------------------------------------------------
+
+        if policy.rag_no_evidence and not policy.any_evidence:
+            state["answer"] = NO_INTERNAL_DOCUMENT_ANSWER
+            return state
+
+        # ----------------------------------------------------------
+        # Partial synthesis — only successful evidence, an honest
+        # failure summary, and no internal implementation details.
+        # ----------------------------------------------------------
+
+        failure_summary = policy.failure_summary()
 
         evidence = {
-            "specialist_results": successful_results,
-            "retrieved_chunks": self._truncate(
-                self._stringify(state.get(
-                    "retrieved_chunks",
-                    [],
-                ))
-            ),
-            "web_results": self._truncate(
-                self._stringify(state.get(
-                    "web_results",
-                    [],
-                ))
-            ),
-            "tool_result": self._truncate(
-                self._stringify(state.get(
-                    "tool_result",
-                ))
-            ),
+            name: result.model_dump()
+            for name, result in policy.successful.items()
         }
+
+        no_evidence_warning = ""
+        if policy.rag_no_evidence:
+            no_evidence_warning = (
+                "Note: internal document retrieval returned no "
+                "matches for this question — do not claim internal "
+                "documentation covers it.\n"
+            )
 
         system_prompt = """
 You are the final response generator for an Enterprise AI Assistant.
 
-Use only the successful specialist evidence provided below.
-Clearly distinguish unavailable specialists from successful evidence.
-Do not invent facts or claim that a failed specialist completed.
-Do not reveal stack traces, exception details, or internal implementation data.
-Keep the answer concise and directly answer the user's question.
+Follow these strict rules:
+
+1. Use ONLY the successful specialist evidence provided below.
+2. Never invent facts and never claim that a failed specialist completed.
+3. Never reveal stack traces, exception details, or internal implementation data.
+4. Clearly distinguish unavailable specialists from successful evidence.
+5. Preserve source references from the evidence where available.
+6. If information is unavailable, say so directly.
+7. Keep the answer concise and directly answer the user's question.
 """
 
         user_prompt = (
             f"User question:\n{state.get('question', '')}\n\n"
+            f"{no_evidence_warning}"
             f"Successful specialist evidence:\n{evidence}\n\n"
             f"Unavailable specialists:\n{failure_summary}"
         )
@@ -944,30 +976,3 @@ Keep the answer concise and directly answer the user's question.
         if isinstance(value, str):
             return value
         return str(value)
-
-    @staticmethod
-    def _safe_failure_description(
-        agent_name,
-        result,
-    ) -> str:
-        metadata = result.get(
-            "metadata",
-            {},
-        )
-
-        if (
-            isinstance(metadata, dict)
-            and metadata.get("permission_denied")
-        ):
-            return "access was denied"
-
-        if agent_name == "research":
-            return "external research was unavailable"
-
-        if agent_name == "rag":
-            return "internal document retrieval was unavailable"
-
-        if agent_name == "data":
-            return "structured data access was unavailable"
-
-        return "the specialist was unavailable"

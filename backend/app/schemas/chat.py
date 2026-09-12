@@ -23,5 +23,10 @@ class SourceChunk(BaseModel):
 class ChatResponse(BaseModel):
     answer: str | None = None
     sources: list[SourceChunk] = Field(default_factory=list)
+    # PR-30 — human-readable citation list collected from successful
+    # specialist results (document names for RAG, title — URL for
+    # research, "database" for data). Distinct from ``sources``, which
+    # carries the structured RAG chunk detail.
+    citations: list[str] = Field(default_factory=list)
     status: str = "completed"
     approval_id: UUID | None = None

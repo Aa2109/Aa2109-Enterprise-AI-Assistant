@@ -74,6 +74,10 @@ class QdrantStore(VectorStore):
                     "owner_id": str(vector["owner_id"]),
                     "chunk_index": vector["chunk_index"],
                     "content": vector["content"],
+                    # PR-30 — persist the human-readable document name so
+                    # RAG citations surface filenames instead of raw
+                    # document UUIDs.
+                    "document_name": vector.get("document_name"),
                     
                 },
             )
@@ -153,6 +157,9 @@ class QdrantStore(VectorStore):
                     "chunk_index": payload["chunk_index"],
                     "content": payload["content"],
                     "score": float(hit.score),
+                    # PR-30 — .get() so payloads indexed before this
+                    # field existed degrade safely to None.
+                    "document_name": payload.get("document_name"),
                 }
             )
 

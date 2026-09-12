@@ -1,3 +1,10 @@
+"""LEGACY — retained for reference, not wired into the graph since PR-30.
+
+The supervisor + specialists path is the only execution flow. Tool
+execution and human-approval interrupts now live in the specialist
+agents (``app/agents/specialists/``) and the approval workflow elsewhere.
+"""
+
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
