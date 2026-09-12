@@ -1,0 +1,39 @@
+# PR-29 — Horizontal Pod Autoscaler: scale the pod count to demand.
+#
+# An AI backend sees spiky traffic (batch conversations, research
+# runs), so spare pods sitting idle are a real cost. The HPA watches
+# average CPU utilization against the Deployment's resource requests
+# and moves replicas between min and max. Custom AI metrics (queue
+# depth, token burn) can be added later — CPU is the right start.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: enterprise-ai-api
+  namespace: enterprise-ai
+  labels:
+    app: enterprise-ai-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: enterprise-ai-api
+
+  minReplicas: 2
+  maxReplicas: 6
+
+  metrics:
+    # 70% of the 250m CPU *request* per pod. A node with no headroom
+    # means the autoscaler has nowhere to grow — but that's the
+    # cluster's job (Cluster Autoscaler), not this manifest's.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # avoid thrash after a spike
+    scaleUp:
+      stabilizationWindowSeconds: 60

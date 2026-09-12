@@ -1,3 +1,4 @@
+from app.core.config import settings
 from app.prompts.rag import (
     RAG_SYSTEM_PROMPT,
     build_rag_user_prompt,
@@ -21,6 +22,14 @@ class ConversationContextBuilder:
             if context_blocks
             else "No relevant context found."
         )
+
+        # PR-28 — never hand the whole retrieval dump to the LLM.
+        # Cap the context at MAX_CONTEXT_CHARS; token-aware truncation
+        # is the eventual improvement.
+        if settings.MAX_CONTEXT_CHARS > 0 and len(
+            context,
+        ) > settings.MAX_CONTEXT_CHARS:
+            context = context[: settings.MAX_CONTEXT_CHARS]
         
         history_text = "\n".join(
             f"{m.role.value}: {m.content}"

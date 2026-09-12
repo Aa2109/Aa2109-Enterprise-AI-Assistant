@@ -31,6 +31,8 @@ llm_input_tokens = None
 llm_output_tokens = None
 llm_total_tokens = None
 
+llm_fallback = None
+
 # ==========================================================
 # Tools
 # ==========================================================
@@ -38,6 +40,40 @@ llm_total_tokens = None
 tool_calls = None
 tool_failures = None
 tool_duration_seconds = None
+
+# ==========================================================
+# PR-28 Reliability
+# ==========================================================
+
+agent_timeouts = None
+
+dependency_failures = None
+dependency_duration_seconds = None
+
+retry_attempts = None
+
+circuit_breaker_open = None
+circuit_breaker_state = None
+
+# ==========================================================
+# PR-28 Caching
+# ==========================================================
+
+cache_hits = None
+cache_misses = None
+
+# ==========================================================
+# PR-28 Cost control
+# ==========================================================
+
+token_budget_exceeded = None
+
+# ==========================================================
+# PR-28 Concurrency
+# ==========================================================
+
+concurrency_limited = None
+concurrency_duration_seconds = None
 
 # ==========================================================
 # Memory
@@ -69,9 +105,29 @@ def configure_metrics() -> None:
     global llm_output_tokens
     global llm_total_tokens
 
+    global llm_fallback
+
     global tool_calls
     global tool_failures
     global tool_duration_seconds
+
+    global agent_timeouts
+
+    global dependency_failures
+    global dependency_duration_seconds
+
+    global retry_attempts
+
+    global circuit_breaker_open
+    global circuit_breaker_state
+
+    global cache_hits
+    global cache_misses
+
+    global token_budget_exceeded
+
+    global concurrency_limited
+    global concurrency_duration_seconds
 
     global memory_retrieval
     global memory_retrieval_duration_seconds
@@ -153,6 +209,12 @@ def configure_metrics() -> None:
         unit="token",
     )
 
+    llm_fallback = meter.create_counter(
+        name="llm_fallback",
+        description="Number of times LLM fallback was triggered",
+        unit="1",
+    )
+
     llm_duration_seconds = meter.create_histogram(
         name="llm_duration_seconds",
         description="LLM call duration",
@@ -178,6 +240,106 @@ def configure_metrics() -> None:
     tool_duration_seconds = meter.create_histogram(
         name="tool_duration_seconds",
         description="Tool execution duration",
+        unit="s",
+    )
+
+    # ==================================================
+    # PR-28 Agent timeouts
+    # ==================================================
+
+    agent_timeouts = meter.create_counter(
+        name="agent_timeouts",
+        description="Total number of agent executions "
+        "that exceeded their timeout",
+        unit="1",
+    )
+
+    # ==================================================
+    # PR-28 Dependency failures & duration
+    # ==================================================
+
+    dependency_failures = meter.create_counter(
+        name="dependency_failures",
+        description="Total number of external dependency "
+        "failures, by dependency and reason",
+        unit="1",
+    )
+
+    dependency_duration_seconds = meter.create_histogram(
+        name="dependency_duration_seconds",
+        description="External dependency call duration",
+        unit="s",
+    )
+
+    # ==================================================
+    # PR-28 Retries
+    # ==================================================
+
+    retry_attempts = meter.create_counter(
+        name="retry_attempts",
+        description="Total number of retry attempts, by "
+        "dependency and outcome",
+        unit="1",
+    )
+
+    # ==================================================
+    # PR-28 Circuit breaker
+    # ==================================================
+
+    circuit_breaker_open = meter.create_counter(
+        name="circuit_breaker_open",
+        description="Total number of times a circuit "
+        "breaker tripped open",
+        unit="1",
+    )
+
+    circuit_breaker_state = meter.create_counter(
+        name="circuit_breaker_state",
+        description="Circuit breaker state transitions",
+        unit="1",
+    )
+
+    # ==================================================
+    # PR-28 Response cache
+    # ==================================================
+
+    cache_hits = meter.create_counter(
+        name="cache_hits",
+        description="Total number of response cache hits",
+        unit="1",
+    )
+
+    cache_misses = meter.create_counter(
+        name="cache_misses",
+        description="Total number of response cache misses",
+        unit="1",
+    )
+
+    # ==================================================
+    # PR-28 Token budget
+    # ==================================================
+
+    token_budget_exceeded = meter.create_counter(
+        name="token_budget_exceeded",
+        description="Total number of requests that exceeded "
+        "the token budget",
+        unit="1",
+    )
+
+    # ==================================================
+    # PR-28 Concurrency
+    # ==================================================
+
+    concurrency_limited = meter.create_counter(
+        name="concurrency_limited",
+        description="Total number of requests rejected by "
+        "the agent concurrency limit",
+        unit="1",
+    )
+
+    concurrency_duration_seconds = meter.create_histogram(
+        name="concurrency_duration_seconds",
+        description="Time spent inside an agent execution slot",
         unit="s",
     )
 

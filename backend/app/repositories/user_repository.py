@@ -16,3 +16,17 @@ class UserRepository(BaseRepository[User]):
         )
 
         return self.db.scalar(statement)
+
+    def count(self) -> int:
+        from sqlalchemy import func
+
+        statement = select(func.count()).select_from(User)
+        return self.db.scalar(statement) or 0
+
+    def exists_admin(self) -> bool:
+        statement = (
+            select(User)
+            .where(User.role == "admin")
+            .limit(1)
+        )
+        return self.db.scalar(statement) is not None

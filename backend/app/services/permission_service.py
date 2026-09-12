@@ -9,6 +9,9 @@ class PermissionService:
         tool,
     ) -> bool:
 
+        if user_id is None:
+            return False
+
         return tool.risk_level in {
             ToolRisk.LOW,
             ToolRisk.MEDIUM,

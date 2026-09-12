@@ -19,8 +19,15 @@ from app.observability import metrics
 class GeminiProvider(LLMProvider):
 
     def __init__(self) -> None:
+        # The request timeout belongs on the client's http_options
+        # (in milliseconds), NOT on GenerateContentConfig, which rejects a
+        # `timeout` field. Setting it here applies uniformly to generate(),
+        # stream() and generate_structured().
         self.client = genai.Client(
-            api_key=settings.GEMINI_API_KEY
+            api_key=settings.GEMINI_API_KEY,
+            http_options=types.HttpOptions(
+                timeout=int(settings.LLM_TIMEOUT_SECONDS * 1000),
+            ),
         )
 
         self.model = settings.LLM_MODEL

@@ -32,6 +32,11 @@ class RequestIDMiddleware(
             request_id
         )
 
+        # Handlers and their exception paths read request_id from
+        # request.state (e.g. /health, /ready) as well as from the
+        # contextvar above — make sure both sources agree.
+        request.state.request_id = request_id
+
         response = await call_next(
             request
         )

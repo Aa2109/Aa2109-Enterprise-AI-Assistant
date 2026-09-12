@@ -10,7 +10,8 @@ class OpenAILLMProvider(LLMProvider):
 
     def __init__(self) -> None:
         self.client = OpenAI(
-            api_key=settings.OPENAI_API_KEY
+            api_key=settings.OPENAI_API_KEY,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
         )
 
         self.model = settings.LLM_MODEL

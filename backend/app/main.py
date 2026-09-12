@@ -13,11 +13,13 @@
 #     return {"status": "healthy"}
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.lifespan import lifespan
 # from app.core.logger import configure_logging
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.security import SecurityHeadersMiddleware
 from app.core.exception_handlers import (
     app_exception_handler,
     unhandled_exception_handler,
@@ -38,7 +40,15 @@ app = FastAPI(
 
 init_observability(app=app,)
 
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 app.include_router(api_router)
 app.add_exception_handler(AppException, app_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)

@@ -1,6 +1,19 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import health, root, temp, document,search, chat, conversations, stream, approvals, memories, metrics
+from app.api.v1.endpoints import (
+    approvals,
+    auth,
+    chat,
+    conversations,
+    document,
+    health,
+    memories,
+    metrics,
+    root,
+    search,
+    stream,
+    temp,
+)
 
 api_router = APIRouter()
 
@@ -15,3 +28,4 @@ api_router.include_router(stream.router)
 api_router.include_router(approvals.router)
 api_router.include_router(memories.router)
 api_router.include_router(metrics.router)
+api_router.include_router(auth.router)

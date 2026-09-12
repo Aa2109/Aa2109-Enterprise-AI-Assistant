@@ -1,4 +1,4 @@
-from datetime import datetime, timezone    
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +10,8 @@ from app.dependencies.approval import (
     )
 from app.repositories.approval_repository import ApprovalRepository
 from app.core.enums.approval import ApprovalStatus
+from app.security.models import Permission, UserContext
+from app.security.permissions import require_permission
 
 
 router = APIRouter(
@@ -21,6 +23,9 @@ router = APIRouter(
 @router.post("/{approval_id}/approve")
 def approve(
     approval_id: UUID,
+    user: UserContext = Depends(
+        require_permission(Permission.ADMIN)
+    ),
     repository: ApprovalRepository = Depends(
         get_approval_repository
         ),

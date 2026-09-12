@@ -9,6 +9,10 @@ class SQLValidator:
         "chunks",
     }
 
+    ALLOWED_SCHEMAS = {
+        "public",
+    }
+
     def validate(self, sql: str) -> None:
 
         if not sql or not sql.strip():

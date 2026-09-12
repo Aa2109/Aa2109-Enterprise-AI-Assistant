@@ -1,10 +1,18 @@
 from sqlalchemy import text
 
+from app.core.config import settings
+
 
 class SQLExecutor:
 
-    def __init__(self, session_factory):
+    def __init__(self, session_factory, max_rows: int | None = None):
         self.session_factory = session_factory
+        # PR-28 — never let a Data Agent pull the whole table back.
+        self.max_rows = (
+            max_rows
+            if max_rows is not None
+            else settings.MAX_QUERY_ROWS
+        )
 
     def execute(self, sql: str):
 
@@ -18,7 +26,7 @@ class SQLExecutor:
 
             rows = [
                 list(row)
-                for row in result.fetchmany(100)
+                for row in result.fetchmany(self.max_rows)
             ]
 
             return {

@@ -1,0 +1,119 @@
+# ==================================================================
+# PR-29 — Production stack
+#
+# Development (root docker-compose.yml) hard-codes credentials for a
+# throwaway local environment. This file is the production posture:
+#
+#   * NO secrets in the file. Every credential comes from the host
+#     environment (shell, CI, or a local .env.prod that is gitignored).
+#     `${VAR:?message}` makes compose fail loudly if a variable is
+#     missing instead of silently deploying with a blank key.
+#   * Data stores are internal-only: no published ports, reachable
+#     only inside the compose network.
+#   * Every service declares a healthcheck; backend waits for its
+#     dependencies to be healthy (service_healthy).
+#   * restart: unless-stopped — self-heals across daemon restarts.
+#
+# Run:
+#   docker compose -f infrastructure/docker/docker-compose.prod.yml \
+#     --env-file infrastructure/docker/.env.prod up -d --build
+#
+# Where .env.prod lives next to this file, is gitignored, and contains
+# the real secrets (see .env.prod.example for the shape).
+# ==================================================================
+
+services:
+  backend:
+    # Immutable tag — never `:latest` in production. Pick the exact
+    # image from a CI build (e.g. enterprise-ai-assistant:git-a81f3c2).
+    image: enterprise-ai-assistant:${IMAGE_TAG:-1.0.0}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      # Non-sensitive configuration
+      ENVIRONMENT: production
+      APP_NAME: "Enterprise AI Assistant"
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+
+      # Credentials — from host env, hard-fail when missing
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      LLM_MODEL: ${LLM_MODEL:-gemini-3.1-flash-lite}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    # Readiness = can serve traffic (the whole stack is reachable).
+    # This is what keeps the container draining/restarting correctly.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-enterprise_ai}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.5
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:6333/healthz >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+# Note: MinIO / S3 is intentionally omitted — the app currently stores
+# uploaded documents on the local filesystem (uploads/). When S3-backed
+# object storage is wired in, add a minio service (or point at AWS S3)
+# and pass its endpoint + credentials to the backend.
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:

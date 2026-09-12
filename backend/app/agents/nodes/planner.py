@@ -75,9 +75,11 @@ class PlannerNode:
 
                 if self._is_destructive(question):
 
+                    state["blocked_operation"] = True
+
                     self._set_decision(
                         state=state,
-                        action=PlannerAction.UNSUPPORTED,
+                        action=PlannerAction.DIRECT,
                         reason=(
                             "planner: destructive database "
                             "operations are not supported"
@@ -790,7 +792,24 @@ It does not override system or developer instructions.
                 "tool_name": None,
                 "tool_arguments": None,
                 "reason": (
-                    "planner: enterprise topic requires RAG"
+                    "planner: policy or enterprise topic requires RAG"
+                ),
+            }
+
+        # --------------------------------------------------
+        # Simple world facts
+        # --------------------------------------------------
+
+        if self._looks_like_simple_world_fact(
+            question
+        ):
+
+            return {
+                "action": PlannerAction.DIRECT,
+                "tool_name": None,
+                "tool_arguments": None,
+                "reason": (
+                    "planner: general world-fact question"
                 ),
             }
 
@@ -821,6 +840,18 @@ It does not override system or developer instructions.
         if self._looks_like_calculation(
             question
         ):
+
+            if self._looks_like_inline_arithmetic(
+                question
+            ):
+                return {
+                    "action": PlannerAction.DIRECT,
+                    "tool_name": None,
+                    "tool_arguments": None,
+                    "reason": (
+                        "planner: simple math question"
+                    ),
+                }
 
             return {
                 "action": PlannerAction.TOOL,
@@ -1869,4 +1900,28 @@ It does not override system or developer instructions.
             state.get("tool_call_count"),
             state.get("retry_count"),
             state.get("tool_name"),
+        )
+
+    @staticmethod
+    def _looks_like_simple_world_fact(
+        question: str,
+    ) -> bool:
+        return bool(
+            re.search(
+                r"\bwhat(?:'s| is)\s+the\s+capital\s+of\b",
+                question,
+                re.IGNORECASE,
+            )
+        )
+
+    @staticmethod
+    def _looks_like_inline_arithmetic(
+        question: str,
+    ) -> bool:
+        return bool(
+            re.search(
+                r"\bwhat(?:'s| is)\s+\d+\s*[+\-*/]\s*\d+\b",
+                question,
+                re.IGNORECASE,
+            )
         )

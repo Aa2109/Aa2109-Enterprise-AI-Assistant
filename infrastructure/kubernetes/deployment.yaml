@@ -1,0 +1,116 @@
+# PR-29 — Deployment: declarative desired state for the FastAPI pods.
+#
+# Pods are ephemeral: the Deployment is what guarantees N healthy
+# replicas exist, rolls out new versions gradually, and resurrects
+# dead pods (self-healing) by recreating them from the same template.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enterprise-ai-api
+  namespace: enterprise-ai
+  labels:
+    app: enterprise-ai-api
+spec:
+  replicas: 2
+
+  # Zero-downtime rolling update:
+  #   * maxUnavailable 1 — at most one pod serving old code can go away
+  #     at a time, so users never hit "connection refused".
+  #   * maxSurge 1 — a new pod is brought up *before* an old one dies.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+
+  selector:
+    matchLabels:
+      app: enterprise-ai-api
+
+  template:
+    metadata:
+      labels:
+        app: enterprise-ai-api
+    spec:
+      # Matches the non-root appuser (uid 10001) created in the image.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+
+      containers:
+        - name: api
+          # Immutable tag — never :latest in production. CI stamps a
+          # git-sha (e.g. enterprise-ai-assistant:1.0.0-gita81f3c2) and
+          # `kubectl set image` promotes that exact build.
+          image: enterprise-ai-assistant:1.0.0
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: enterprise-ai-config
+            - secretRef:
+                name: enterprise-ai-secrets
+
+          resources:
+            # AI workloads are CPU+memory hungry. Requests guarantee
+            # scheduling and set the CPU autoscaling baseline; limits
+            # stop one busy agent from exhausting the node. Tune these
+            # from real profiling, not defaults.
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+
+          # --- probes -------------------------------------------------
+          # startupProbe: agents cold-start slowly — model weights load
+          # at import (sentence-transformers). Give the process up to
+          # 5 minutes to warm up before the readiness probe applies.
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 5
+
+          # Readiness: only route traffic to a pod whose data plane
+          # (Postgres/Redis/Qdrant) actually answers. A pod whose cache
+          # is briefly down must NOT get new AI requests — long,
+          # expensive agent runs would fail mid-flight.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Liveness: restart the *process* only when it's truly wedged.
+          # The /health endpoint deliberately checks nothing, so a DB
+          # outage (recoverable) doesn't trigger a restart — only a hung
+          # event loop does.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Graceful drain: SIGTERM → uvicorn --timeout-graceful-shutdown
+          # finishes in-flight agent requests before the pod exits.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]

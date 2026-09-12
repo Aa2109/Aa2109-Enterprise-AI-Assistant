@@ -3,6 +3,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies.memory import get_memory_service
+from app.security.models import Permission, UserContext
+from app.security.permissions import require_permission
 from app.services.memory_service import MemoryService
 
 
@@ -13,11 +15,14 @@ router = APIRouter(
 
 @router.get("")
 def list_memories(
-    user_id: UUID,
+    user: UserContext = Depends(
+        require_permission(Permission.RAG_READ)
+    ),
     service: MemoryService = Depends(
         get_memory_service
     ),
 ):
+    user_id = UUID(user.user_id)
 
     memories = service.list_memories(
         user_id
@@ -41,11 +46,14 @@ def list_memories(
 @router.delete("/{memory_id}")
 def delete_memory(
     memory_id: UUID,
-    user_id: UUID,
+    user: UserContext = Depends(
+        require_permission(Permission.RAG_READ)
+    ),
     service: MemoryService = Depends(
         get_memory_service
     ),
 ):
+    user_id = UUID(user.user_id)
 
     deleted = service.delete_memory(
         user_id=user_id,

@@ -12,6 +12,7 @@ class OpenRouterProvider(LLMProvider):
         self.client = OpenAI(
             api_key=settings.OPENROUTER_API_KEY,
             base_url=settings.OPENROUTER_BASE_URL,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
         )
 
         self.model = settings.LLM_MODEL
@@ -24,6 +25,7 @@ class OpenRouterProvider(LLMProvider):
 
         response = self.client.chat.completions.create(
             model=self.model,
+            max_tokens=settings.LLM_MAX_TOKENS,
             messages=[
                 {
                     "role": "system",
@@ -46,6 +48,7 @@ class OpenRouterProvider(LLMProvider):
 
         stream = self.client.chat.completions.create(
             model=self.model,
+            max_tokens=settings.LLM_MAX_TOKENS,
             messages=[
                 {
                     "role": "system",
@@ -78,6 +81,7 @@ class OpenRouterProvider(LLMProvider):
 
         response = self.client.chat.completions.create(
             model=self.model,
+            max_tokens=settings.LLM_MAX_TOKENS,
             messages=[
                 {
                     "role": "system",
@@ -92,7 +96,14 @@ class OpenRouterProvider(LLMProvider):
                 "type": "json_schema",
                 "json_schema": {
                     "name": schema.__name__,
-                    "strict": True,
+                    # strict grammar validation requires additionalProperties:
+                    # false on every object and all properties in `required`,
+                    # which pydantic's model_json_schema() does not emit (and an
+                    # open dict field like tool_arguments cannot satisfy at all),
+                    # so strict mode 400s on strict-enforcing models. Keep it
+                    # off; the client-side model_validate_json below still
+                    # enforces the schema.
+                    "strict": False,
                     "schema": schema.model_json_schema(),
                 },
             },

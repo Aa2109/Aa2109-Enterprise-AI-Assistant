@@ -1,0 +1,37 @@
+# PR-29 — Ingress: the "Load Balancer" edge into the cluster.
+#
+# External traffic → Ingress Controller (ALB/nginx) → Service → Pods.
+# The Ingress owns host/path routing and TLS termination; everything
+# behind it stays ClusterIP. Uploads can be large and agent answers
+# can stream for minutes, so the controller timeouts are raised.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: enterprise-ai-api
+  namespace: enterprise-ai
+  labels:
+    app: enterprise-ai-api
+  annotations:
+    # nginx ingress controller
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "180"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "180"
+    # TLS via cert-manager instead of self-signed certs in git
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: enterprise-ai-tls   # issued by cert-manager
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: enterprise-ai-api
+                port:
+                  number: 80

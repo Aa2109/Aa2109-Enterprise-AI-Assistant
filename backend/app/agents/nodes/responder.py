@@ -1,5 +1,7 @@
 import re
 
+from app.core.budget import charge_usage
+from app.core.config import settings
 from app.prompts.direct import DIRECT_SYSTEM_PROMPT
 from app.schemas.planner import PlannerAction
 
@@ -7,6 +9,12 @@ from opentelemetry import trace
 
 tracer = trace.get_tracer(
     "enterprise-ai-assistant"
+)
+
+# Safe response when the per-request token budget is exhausted.
+BUDGET_EXCEEDED_ANSWER = (
+    "I reached my processing budget for this request. "
+    "Please ask a more focused question."
 )
 
 def format_sql_result(
@@ -277,7 +285,25 @@ class ResponderNode:
 
     def __call__(self, state):
 
-        decision = state["decision"]
+        agent_results = state.get(
+            "agent_results",
+            {},
+        )
+
+        if agent_results:
+            return self._respond_from_specialists(
+                state,
+                agent_results,
+            )
+
+        decision = state.get("decision")
+
+        if decision is None and (
+            state.get("done")
+            or state.get("supervisor_done")
+            or state.get("agent_results")
+        ):
+            decision = PlannerAction.FINAL.value
 
         #Pr24
         retrieved_memories = state.get(
@@ -326,6 +352,14 @@ class ResponderNode:
         # ==================================================
 
         elif decision == PlannerAction.DIRECT.value:
+
+            if state.get("blocked_operation"):
+                state["answer"] = (
+                    "I can't perform that operation because "
+                    "the current application supports "
+                    "read-only database access only."
+                )
+                return state
 
             system_prompt = (
                 DIRECT_SYSTEM_PROMPT
@@ -394,7 +428,7 @@ class ResponderNode:
                 if tool_error:
 
                     answer = (
-                        "I couldn't complete the web search. "
+                        "I was able to answer using internal documents, but the external research component failed... : "
                         f"The tool reported: {tool_error}"
                     )
 
@@ -560,6 +594,9 @@ STRICT RULES:
                     )
                     for chunk in retrieved_chunks
                 )
+
+                # PR-28 — cap the context sent to the LLM.
+                context = self._truncate(context)
 
                 system_prompt = """
         You are the final response generator for an Enterprise AI Assistant.
@@ -769,6 +806,168 @@ Do not invent facts.
 
                 raise
 
+        # PR-28 — account for this LLM call against the request budget.
+        state = charge_usage(
+            state,
+            input_text=user_prompt,
+            output_text=answer,
+        )
+
+        if state.get("token_budget_exceeded"):
+            state["answer"] = BUDGET_EXCEEDED_ANSWER
+            return state
+
         state["answer"] = answer
 
         return state
+
+    def _respond_from_specialists(
+        self,
+        state,
+        agent_results,
+    ):
+        successful_results = {
+            name: result
+            for name, result in agent_results.items()
+            if isinstance(result, dict)
+            and result.get("success") is True
+        }
+
+        failed_results = {
+            name: result
+            for name, result in agent_results.items()
+            if isinstance(result, dict)
+            and result.get("success") is False
+        }
+
+        if not successful_results:
+            if failed_results:
+                if any(
+                    isinstance(result.get("metadata"), dict)
+                    and result["metadata"].get(
+                        "permission_denied"
+                    )
+                    for result in failed_results.values()
+                ):
+                    state["answer"] = (
+                        "You are not authorized to access "
+                        "the requested data."
+                    )
+                    return state
+
+                failed_agents = ", ".join(
+                    failed_results
+                )
+                state["answer"] = (
+                    "I couldn't complete the request because "
+                    f"the following specialists were unavailable: "
+                    f"{failed_agents}."
+                )
+                return state
+
+        failure_summary = "\n".join(
+            f"- {name}: {self._safe_failure_description(name, result)}"
+            for name, result in failed_results.items()
+        ) or "None"
+
+        evidence = {
+            "specialist_results": successful_results,
+            "retrieved_chunks": self._truncate(
+                self._stringify(state.get(
+                    "retrieved_chunks",
+                    [],
+                ))
+            ),
+            "web_results": self._truncate(
+                self._stringify(state.get(
+                    "web_results",
+                    [],
+                ))
+            ),
+            "tool_result": self._truncate(
+                self._stringify(state.get(
+                    "tool_result",
+                ))
+            ),
+        }
+
+        system_prompt = """
+You are the final response generator for an Enterprise AI Assistant.
+
+Use only the successful specialist evidence provided below.
+Clearly distinguish unavailable specialists from successful evidence.
+Do not invent facts or claim that a failed specialist completed.
+Do not reveal stack traces, exception details, or internal implementation data.
+Keep the answer concise and directly answer the user's question.
+"""
+
+        user_prompt = (
+            f"User question:\n{state.get('question', '')}\n\n"
+            f"Successful specialist evidence:\n{evidence}\n\n"
+            f"Unavailable specialists:\n{failure_summary}"
+        )
+
+        answer = self.llm.generate(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
+
+        # PR-28 — account for this LLM call against the request budget.
+        state = charge_usage(
+            state,
+            input_text=user_prompt,
+            output_text=answer,
+        )
+
+        if state.get("token_budget_exceeded"):
+            state["answer"] = BUDGET_EXCEEDED_ANSWER
+            return state
+
+        state["answer"] = answer
+
+        return state
+
+    @staticmethod
+    def _truncate(text: str) -> str:
+        """PR-28 — cap oversized context at MAX_CONTEXT_CHARS."""
+        if settings.MAX_CONTEXT_CHARS > 0 and (
+            text is not None
+            and len(text) > settings.MAX_CONTEXT_CHARS
+        ):
+            return text[: settings.MAX_CONTEXT_CHARS]
+        return text or ""
+
+    @staticmethod
+    def _stringify(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        return str(value)
+
+    @staticmethod
+    def _safe_failure_description(
+        agent_name,
+        result,
+    ) -> str:
+        metadata = result.get(
+            "metadata",
+            {},
+        )
+
+        if (
+            isinstance(metadata, dict)
+            and metadata.get("permission_denied")
+        ):
+            return "access was denied"
+
+        if agent_name == "research":
+            return "external research was unavailable"
+
+        if agent_name == "rag":
+            return "internal document retrieval was unavailable"
+
+        if agent_name == "data":
+            return "structured data access was unavailable"
+
+        return "the specialist was unavailable"

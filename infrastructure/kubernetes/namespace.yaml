@@ -1,0 +1,10 @@
+# PR-29 — tenant isolation: the agent backend lives in its own
+# namespace so it can't collide with other workloads, and RBAC/scoping
+# questions are trivial to reason about.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: enterprise-ai
+  labels:
+    app: enterprise-ai-api
+    environment: production

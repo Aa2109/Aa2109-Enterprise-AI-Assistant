@@ -9,8 +9,12 @@ class SchemaProvider:
 
         Columns:
         - id
-        - filename
         - owner_id
+        - original_filename
+        - storage_filename
+        - storage_path
+        - mime_type
+        - file_size
         - status
         - created_at
         """
