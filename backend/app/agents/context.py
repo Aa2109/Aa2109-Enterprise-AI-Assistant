@@ -29,9 +29,10 @@ def _turns_text(turns: list[dict]) -> str:
 
 def _memories_text(state: dict) -> str:
     return "\n".join(
-        memory.get("content", "")
+        content
         for memory in (state.get("retrieved_memories") or [])
-        if isinstance(memory, dict) and memory.get("content")
+        if isinstance(memory, dict)
+        and (content := (memory.get("content") or "").strip())
     )
 
 
@@ -45,6 +46,9 @@ def build_contextualized_question(state: dict) -> str:
     loading history, so without this the question would repeat itself.
     """
     question = (state.get("question") or "").strip()
+
+    if not question:
+        return ""
 
     turns = _recent_turns(state)
 
