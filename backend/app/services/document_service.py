@@ -32,6 +32,12 @@ class DocumentService:
     def health(self) -> bool:
             return self.repository.health()
 
+    def list_documents(
+        self,
+        owner_id,
+    ):
+        return self.repository.find_by_owner(owner_id)
+
     def upload_document(
         self,
         owner_id,

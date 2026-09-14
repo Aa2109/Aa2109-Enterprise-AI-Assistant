@@ -82,6 +82,13 @@ class RAGService:
             content=answer,
         )
 
+        # Name the thread after its opening question so the sidebar
+        # shows something meaningful instead of "New Conversation".
+        self.conversation_service.ensure_title(
+            conversation_id,
+            query,
+        )
+
     def answer(
         self,
         request: ChatRequest,
@@ -398,6 +405,11 @@ class RAGService:
                         conversation_id=request.conversation_id,
                         role=MessageRole.USER,
                         content=request.query,
+                    )
+
+                    self.conversation_service.ensure_title(
+                        request.conversation_id,
+                        request.query,
                     )
 
                     return ChatResponse(

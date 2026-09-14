@@ -15,7 +15,7 @@ Covers 30 test scenarios:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import jwt
@@ -38,7 +38,6 @@ from app.security.prompt_guard import (
     validate_user_prompt,
 )
 
-
 # ============================================================
 # Helpers
 # ============================================================
@@ -51,14 +50,14 @@ ADMIN_ID = "00000000-0000-0000-0000-000000000003"
 def _token(user_id: str, role: Role, *, expired: bool = False) -> str:
     """Generate a JWT for tests."""
     if expired:
-        expires = datetime.now(timezone.utc) - timedelta(hours=1)
+        expires = datetime.now(UTC) - timedelta(hours=1)
     else:
-        expires = datetime.now(timezone.utc) + timedelta(hours=1)
+        expires = datetime.now(UTC) + timedelta(hours=1)
 
     payload = {
         "sub": user_id,
         "role": role.value,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
         "exp": expires,
     }
     return jwt.encode(
@@ -91,6 +90,7 @@ def _user_ctx(role: Role, user_id: str = USER_ID) -> UserContext:
 async def test_tc01_no_jwt_returns_401():
     """TC 1 — Call /chat/answer with no JWT → 401."""
     from unittest.mock import MagicMock
+
     from fastapi.testclient import TestClient
 
     mock_service = MagicMock()
@@ -113,6 +113,7 @@ async def test_tc01_no_jwt_returns_401():
 async def test_tc02_invalid_malformed_jwt_returns_401():
     """TC 2 — Call with invalid/malformed JWT → 401."""
     from unittest.mock import MagicMock
+
     from fastapi.testclient import TestClient
 
     mock_service = MagicMock()
@@ -136,6 +137,7 @@ async def test_tc02_invalid_malformed_jwt_returns_401():
 async def test_tc03_expired_jwt_returns_401():
     """TC 3 — Call with expired JWT → 401."""
     from unittest.mock import MagicMock
+
     from fastapi.testclient import TestClient
 
     mock_service = MagicMock()
@@ -190,13 +192,12 @@ async def test_tc04_user_rag_allowed():
 
 
 @pytest.mark.asyncio
-async def test_tc05_user_research_denied():
-    """TC 5 — USER asks latest agentic AI → Research denied."""
+async def test_tc05_user_research_allowed():
+    """TC 5 — USER asks latest agentic AI → Research allowed."""
     checker = _require_research()
     user = _user_ctx(Role.USER)
-    with pytest.raises(HTTPException) as exc:
-        await checker(user=user)
-    assert exc.value.status_code == 403
+    result = await checker(user=user)
+    assert result.role == Role.USER
 
 
 @pytest.mark.asyncio
@@ -352,9 +353,9 @@ class FailIfCalled:
 
 def test_tc18_llm_tool_blocked_for_unauthorized_user():
     """TC 18 — LLM tries to call a tool user doesn't have permission for → blocked."""
+    from app.agents.specialists.data_agent import DataAgent
     from app.agents.specialists.rag_agent import RAGAgent
     from app.agents.specialists.research_agent import ResearchAgent
-    from app.agents.specialists.data_agent import DataAgent
 
     denied = _user_ctx(
         Role.USER,
@@ -634,7 +635,7 @@ async def test_tc30_different_users_get_isolated_contexts():
     # Each user gets permissions matching their role only
     assert ctx_alice.role == Role.USER
     assert ctx_bob.role == Role.ANALYST
-    assert Permission.RESEARCH not in ctx_alice.permissions
+    assert Permission.RESEARCH in ctx_alice.permissions
     assert Permission.RESEARCH in ctx_bob.permissions
 
     # There is no cross-contamination

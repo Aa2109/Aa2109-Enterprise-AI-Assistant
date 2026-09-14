@@ -3,6 +3,7 @@ from typing import ClassVar
 
 from opentelemetry import trace
 
+from app.agents.context import build_memory_and_history_context
 from app.agents.result import build_result
 from app.core.budget import charge_usage
 from app.prompts.supervisor import (
@@ -472,7 +473,13 @@ class Supervisor:
             [],
         )
 
-        return f"""
+        # PR-memory — earlier turns + retrieved user memory reach the
+        # router so a follow-up like "what should I study to master this
+        # field" keeps its antecedent ("data science") and is not routed
+        # as a context-free query.
+        context = build_memory_and_history_context(state)
+
+        prompt = f"""
 USER REQUEST:
 
 {question}
@@ -488,6 +495,8 @@ PREVIOUSLY SELECTED AGENTS:
 CURRENT SUPERVISOR STEP:
 
 {state.get("agent_step", 0)}
+
+{context}
 
 Choose only the specialists required to make progress.
 

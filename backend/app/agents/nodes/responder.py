@@ -1,5 +1,6 @@
 import re
 
+from app.agents.context import build_memory_and_history_context
 from app.agents.synthesis import (
     ALL_FAILED_ANSWER_PREFIX,
     NO_INTERNAL_DOCUMENT_ANSWER,
@@ -932,12 +933,20 @@ Follow these strict rules:
 7. Keep the answer concise and directly answer the user's question.
 """
 
+        # Same-conversation follow-up and retrieved user memory reach the
+        # synthesis so "what should I study to master this field" keeps its
+        # antecedent ("data science") at the final step too.
+        context = build_memory_and_history_context(state)
+
         user_prompt = (
             f"User question:\n{state.get('question', '')}\n\n"
             f"{no_evidence_warning}"
             f"Successful specialist evidence:\n{evidence}\n\n"
             f"Unavailable specialists:\n{failure_summary}"
         )
+
+        if context:
+            user_prompt += f"\n\n{context}"
 
         answer = self.llm.generate(
             system_prompt=system_prompt,

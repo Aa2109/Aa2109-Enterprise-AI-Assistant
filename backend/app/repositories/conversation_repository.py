@@ -23,6 +23,11 @@ class ConversationRepository:
             .all()
         )
 
+    def update(self, conversation):
+        self.db.commit()
+        self.db.refresh(conversation)
+        return conversation
+
     def delete(self, conversation):
         self.db.delete(conversation)
         self.db.commit()

@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.reliability import execute_sync
 from app.core.timeout import DependencyTimeoutError
 from app.observability import metrics
+from app.agents.context import build_contextualized_question
 from app.agents.result import build_result, truncate_text
 from app.security.audit import audit_security_event
 from app.security.guards import has_permission
@@ -153,7 +154,12 @@ class ResearchAgent:
                     result = execute_sync(
                         lambda: self.web_search_tool.execute(
                             {
-                                "query": state["question"],
+                                # A follow-up question carries its earlier
+                                # turns so the web search keeps context
+                                # ("...master this field" → data science).
+                                "query": build_contextualized_question(
+                                    state
+                                ),
                                 "max_results": 5,
                             }
                         ),

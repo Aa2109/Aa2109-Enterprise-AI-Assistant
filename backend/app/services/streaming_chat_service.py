@@ -45,6 +45,13 @@ class StreamingChatService:
             content=request.query,
         )
 
+        # Name the thread after its opening question so the sidebar
+        # shows something meaningful instead of "New Conversation".
+        self.conversations.ensure_title(
+            request.conversation_id,
+            request.query,
+        )
+
         history = self.conversations.history(
             request.conversation_id,
         )

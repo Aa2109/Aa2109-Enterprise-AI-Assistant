@@ -6,11 +6,11 @@ Kept as a leaf module (imports only ``models``) so both ``auth`` and
 
 from app.security.models import Permission, Role
 
-
 ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
     Role.USER: {
         Permission.CHAT,
         Permission.RAG_READ,
+        Permission.RESEARCH,
     },
     Role.ANALYST: {
         Permission.CHAT,

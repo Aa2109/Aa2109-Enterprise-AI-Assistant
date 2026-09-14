@@ -16,12 +16,17 @@ class MessageRepository:
         conversation_id,
         limit=10,
     ):
-        return (
+        query = (
             self.db.query(Message)
             .filter(
                 Message.conversation_id == conversation_id
             )
             .order_by(Message.created_at.desc())
-            .limit(limit)
-            .all()[::-1]
         )
+
+        # ``limit=None`` means "the whole thread" — the conversations
+        # API uses it to rebuild a conversation in the UI.
+        if limit is not None:
+            query = query.limit(limit)
+
+        return query.all()[::-1]

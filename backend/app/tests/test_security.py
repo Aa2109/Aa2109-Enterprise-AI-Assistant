@@ -55,6 +55,7 @@ def test_role_permission_matrix_matches_table():
     assert permissions_for_role(Role.USER) == {
         Permission.CHAT,
         Permission.RAG_READ,
+        Permission.RESEARCH,
     }
     assert permissions_for_role(Role.ANALYST) == {
         Permission.CHAT,
@@ -92,7 +93,7 @@ async def test_require_permission_allows_permitted_user():
 
 @pytest.mark.asyncio
 async def test_require_permission_denies_missing_permission():
-    checker = require_permission(Permission.RESEARCH)
+    checker = require_permission(Permission.DATA_READ)
     user = make_user(Role.USER)
 
     with pytest.raises(HTTPException) as exc:
@@ -151,7 +152,7 @@ def test_require_tool_permission_raises_403_on_denial():
     user = make_user(Role.USER)
 
     with pytest.raises(HTTPException) as exc:
-        require_tool_permission(user, Permission.RESEARCH)
+        require_tool_permission(user, Permission.DATA_READ)
 
     assert exc.value.status_code == 403
 
@@ -295,8 +296,9 @@ def test_supervisor_drops_specialists_user_cannot_run():
 
     result = Supervisor(EverythingLLM())(state)
 
-    assert result["selected_agents"] == ["rag"]
-    assert result["pending_agents"] == ["rag"]
+    # USER keeps CHAT/RAG/RESEARCH; DATA (read/write access) is dropped.
+    assert result["selected_agents"] == ["rag", "research"]
+    assert result["pending_agents"] == ["rag", "research"]
 
 
 def test_supervisor_allows_everything_for_admin():
@@ -359,15 +361,21 @@ class RecordingGraph:
 class FakeConversation:
     def __init__(self):
         self.messages = []
+        self.title = None
 
     def get(self, conversation_id):
         return {"id": str(conversation_id)}
 
-    def history(self, conversation_id):
+    def history(self, conversation_id, limit=10):
         return []
 
     def add_message(self, conversation_id, role, content):
         self.messages.append((conversation_id, role, content))
+
+    def ensure_title(self, conversation_id, query):
+        if self.title is None:
+            self.title = query
+        return self.title
 
 
 def chat_request(query="what's in the docs?"):

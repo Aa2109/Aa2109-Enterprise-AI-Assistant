@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.reliability import execute_sync
 from app.core.timeout import DependencyTimeoutError
 from app.observability import metrics
+from app.agents.context import build_contextualized_question
 from app.agents.result import build_result
 from app.security.audit import audit_security_event
 from app.security.guards import has_permission
@@ -146,7 +147,12 @@ class DataAgent:
                     result = execute_sync(
                         lambda: self.sql_tool.execute(
                             {
-                                "question": state["question"],
+                                # Self-contained follow-up: prior turns are
+                                # prepended so the SQL generator sees the
+                                # antecedent of "the same table" / "this".
+                                "question": build_contextualized_question(
+                                    state
+                                ),
                                 "read_only": True,
                             }
                         ),

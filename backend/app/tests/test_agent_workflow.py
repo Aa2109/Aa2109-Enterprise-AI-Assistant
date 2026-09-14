@@ -112,6 +112,18 @@ class FailingWebSearchTool:
         raise RuntimeError("search service unavailable")
 
 
+class RecordingWebSearchTool(FakeWebSearchTool):
+    """Captures the query each call, so tests can assert that a follow-up
+    carried its earlier conversation turns into the research tool."""
+
+    def __init__(self):
+        self.queries = []
+
+    def execute(self, arguments):
+        self.queries.append(arguments["query"])
+        return super().execute(arguments)
+
+
 class FakeSQLTool:
     def execute(self, arguments):
         return {
@@ -502,3 +514,85 @@ def test_memory_followup_injected_into_final_answer():
     assert llm.user_prompt is not None
     assert "The user's name is Aashif." in llm.user_prompt
     assert "My name is Aashif." in llm.user_prompt
+
+
+def test_followup_question_contextualized_for_research():
+    """A same-conversation follow-up must carry its antecedent into the
+    research web-search query (and the context block into synthesis)."""
+    llm = RecordingLLM()
+    search_tool = RecordingWebSearchTool()
+
+    owner_id = UUID("00000000-0000-0000-0000-00000000000a")
+
+    class MemoryStub:
+        def __call__(self, state):
+            state["retrieved_memories"] = [
+                {
+                    "memory_id": str(uuid4()),
+                    "user_id": str(owner_id),
+                    "content": "The user is studying data science.",
+                    "memory_type": "semantic",
+                    "importance": 0.5,
+                    "score": 0.6,
+                }
+            ]
+            return state
+
+    graph = build_graph(
+        responder=ResponderNode(llm, context_builder=None),
+        memory_retriever_node=MemoryStub(),
+        memory_extractor_node=stub_memory_extractor,
+        supervisor=Supervisor(
+            ScriptedSupervisorLLM(
+                RoutingDecision(
+                    agents=[AgentName.RESEARCH],
+                    reasoning="need external info",
+                    done=False,
+                ),
+                RoutingDecision(
+                    agents=[],
+                    reasoning="enough evidence",
+                    done=True,
+                ),
+            )
+        ),
+        rag_agent=RAGAgent(FakeRetriever(RAG_CHUNKS), breaker=None),
+        research_agent=ResearchAgent(search_tool, breaker=None),
+        data_agent=DataAgent(FakeSQLTool(), breaker=None),
+    )
+
+    result = graph.invoke(
+        default_state(
+            question="What should I study to master this field?",
+            history=[
+                {
+                    "role": "user",
+                    "content": "What is data science, in two lines?",
+                },
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Data science is an interdisciplinary field that "
+                        "combines statistics, computer science, and domain "
+                        "expertise."
+                    ),
+                },
+            ],
+        ),
+        config=graph_config(),
+    )
+
+    assert result["answer"] == "synthesis answer"
+
+    # The web-search tool received a self-contained query, not the bare
+    # anaphoric follow-up.
+    assert search_tool.queries, "research tool was never called"
+    query = search_tool.queries[0]
+    assert "Data science is an interdisciplinary field" in query
+    assert "master this field" in query
+    assert "Current question:" in query
+
+    # The retrieved user memory + earlier turns also reach the synthesis.
+    assert llm.user_prompt is not None
+    assert "The user is studying data science." in llm.user_prompt
+    assert "What is data science, in two lines?" in llm.user_prompt
