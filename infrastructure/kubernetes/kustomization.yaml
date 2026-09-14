@@ -1,0 +1,30 @@
+# PR-29 — Kustomize: apply the whole stack in one command.
+#
+#   kubectl apply -k infrastructure/kubernetes/
+#
+# Kustomize renders a `namePrefix`ed, uniformly-labeled set of
+# resources so the directory is the source of truth and
+# `kubectl kustomize` doubles as a offline validation of the manifest
+# references (resources must exist, names must resolve).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: enterprise-ai
+
+# `labels` with includeSelectors+includeTemplates reproduces the old
+# commonLabels behaviour (applies to selector + object metadata).
+labels:
+  - pairs:
+      app: enterprise-ai-api
+      managed-by: kustomize
+    includeSelectors: true
+    includeTemplates: true
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - hpa.yaml

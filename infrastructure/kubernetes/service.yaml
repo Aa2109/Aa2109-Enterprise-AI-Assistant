@@ -1,0 +1,22 @@
+# PR-29 — Service: stable virtual IP in front of the ephemeral pods.
+#
+# Pods come and go (rollouts, autoscaling, node drains) and each has a
+# throwaway IP. The Service selects pods by label and load-balances TCP
+# across whatever is healthy — so clients, other services, and the
+# Ingress always talk to a stable name: enterprise-ai-api:80.
+apiVersion: v1
+kind: Service
+metadata:
+  name: enterprise-ai-api
+  namespace: enterprise-ai
+  labels:
+    app: enterprise-ai-api
+spec:
+  type: ClusterIP
+  selector:
+    app: enterprise-ai-api
+  ports:
+    - name: http
+      port: 80          # what clients / Ingress connect to
+      targetPort: 8000  # the container's uvicorn port
+      protocol: TCP

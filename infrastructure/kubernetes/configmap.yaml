@@ -1,0 +1,69 @@
+# PR-29 — ConfigMap: NON-sensitive configuration only.
+#
+# Anything a competitor could hold without damage lives here. API keys,
+# DB passwords and JWT secrets go in secret.yaml (and, in a real AWS
+# deployment, are injected from AWS Secrets Manager via the External
+# Secrets Operator — never baked into a repo).
+#
+# Keys are read by app/core/config.py via pydantic-settings, which is
+# case-insensitive, so these uppercase names map straight to settings.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: enterprise-ai-config
+  namespace: enterprise-ai
+data:
+  # --- runtime -----------------------------------------------------
+  ENVIRONMENT: "production"
+  APP_NAME: "Enterprise AI Assistant"
+  APP_VERSION: "0.1.0"
+  HOST: "0.0.0.0"
+  PORT: "8000"
+  CORS_ORIGINS: "https://app.example.com"
+
+  # --- service discovery (internal DNS in the cluster) ------------
+  QDRANT_HOST: "qdrant-svc.enterprise-ai.svc.cluster.local"
+  QDRANT_PORT: "6333"
+  QDRANT_COLLECTION: "documents"
+  QDRANT_MEMORY_COLLECTION: "memory_vectors"
+
+  # --- LLM routing (providers/keys are in the Secret) -------------
+  LLM_PROVIDER: "gemini"
+  LLM_MODEL: "gemini-3.1-flash-lite"
+  LLM_FALLBACK_PROVIDERS: "openrouter"
+  LLM_FALLBACK_MODEL: "google/gemini-2.5-flash"
+  LLM_MAX_TOKENS: "4096"
+
+  # --- PR-28 reliability budgets (timeouts in seconds) ------------
+  LLM_TIMEOUT_SECONDS: "60"
+  RAG_TIMEOUT_SECONDS: "5"
+  DATABASE_TIMEOUT_SECONDS: "5"
+  WEB_SEARCH_TIMEOUT_SECONDS: "10"
+  REDIS_TIMEOUT_SECONDS: "2"
+  AGENT_TOTAL_TIMEOUT_SECONDS: "120"
+  HTTP_CONNECT_TIMEOUT_SECONDS: "5"
+  HTTP_WRITE_TIMEOUT_SECONDS: "5"
+  HTTP_POOL_TIMEOUT_SECONDS: "5"
+  HTTP_MAX_CONNECTIONS: "50"
+  HTTP_MAX_KEEPALIVE_CONNECTIONS: "20"
+
+  # --- retry / circuit breaker ------------------------------------
+  RETRY_MAX_ATTEMPTS: "3"
+  RETRY_BASE_DELAY_SECONDS: "0.5"
+  RETRY_MAX_DELAY_SECONDS: "8"
+  CIRCUIT_FAIL_MAX: "5"
+  CIRCUIT_RECOVERY_TIMEOUT_SECONDS: "30"
+
+  # --- agent safety limits (config-driven, never hard-coded) ------
+  MAX_AGENT_STEPS: "6"
+  MAX_TOOL_CALLS: "10"
+  MAX_INPUT_TOKENS: "12000"
+  MAX_OUTPUT_TOKENS: "3000"
+  MAX_TOTAL_TOKENS: "15000"
+  MAX_CONTEXT_CHARS: "30000"
+  MAX_QUERY_ROWS: "100"
+  AGENT_CONCURRENCY: "3"
+
+  # --- response cache ---------------------------------------------
+  REDIS_CACHE_TTL_SECONDS: "300"
+  KNOWLEDGE_VERSION: "1"
